@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.api.dependencies import get_db, require_profile
+from src.api.dependencies import exigir_perfis, get_db
 from src.infrastructure.database.models import EstoqueModel
 
 
@@ -24,7 +24,7 @@ class StockResponse(BaseModel):
 @router.get(
     "",
     response_model=list[StockResponse],
-    dependencies=[Depends(require_profile("GERENTE"))],
+    dependencies=[Depends(exigir_perfis("GERENTE"))],
 )
 def list_stock(
     session: Annotated[Session, Depends(get_db)],

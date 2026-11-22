@@ -44,7 +44,7 @@ def get_current_user(
     return user
 
 
-def require_profile(*allowed_profiles: str) -> Callable[..., UsuarioModel]:
+def exigir_perfis(*allowed_profiles: str) -> Callable[..., UsuarioModel]:
     def check_profile(
         current_user: Annotated[UsuarioModel, Depends(get_current_user)],
     ) -> UsuarioModel:
