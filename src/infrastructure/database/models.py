@@ -75,6 +75,27 @@ class EstoqueModel(Base):
     produto: Mapped[ProdutoModel] = relationship()
 
 
+class MovimentacaoEstoqueModel(Base):
+    __tablename__ = "movimentacoes_estoque"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pedido_id: Mapped[int] = mapped_column(ForeignKey("pedidos.id"), nullable=False)
+    unidade_id: Mapped[int] = mapped_column(
+        ForeignKey("unidades.id"), nullable=False
+    )
+    produto_id: Mapped[int] = mapped_column(
+        ForeignKey("produtos.id"), nullable=False
+    )
+    usuario_id: Mapped[int] = mapped_column(
+        ForeignKey("usuarios.id"), nullable=False
+    )
+    tipo: Mapped[str] = mapped_column(String(20), nullable=False)
+    quantidade: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
 class FidelidadeModel(Base):
     __tablename__ = "fidelidades"
 
@@ -143,6 +164,9 @@ class PagamentoModel(Base):
     metodo: Mapped[str] = mapped_column(String(30), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False)
     valor: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )

@@ -2,40 +2,37 @@ from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import exigir_perfis, get_db
 from src.api.errors import BusinessError
+from src.domain.orders import (
+    OrderChannel as CanalPedido,
+    OrderStatus as StatusPedido,
+    can_pay_order,
+)
 from src.infrastructure.audit import registrar_auditoria
 from src.infrastructure.database.models import (
     EstoqueModel,
     ItemPedidoModel,
+    MovimentacaoEstoqueModel,
+    PagamentoModel,
     PedidoModel,
     ProdutoModel,
     UnidadeModel,
     UsuarioModel,
 )
+from src.infrastructure.payment_gateway import (
+    GatewayUnavailableError,
+    mock_payment_gateway,
+)
 
 
 router = APIRouter(prefix="/pedidos", tags=["Pedidos"])
 CENTAVO = Decimal("0.01")
-
-
-class CanalPedido(str, Enum):
-    BALCAO = "BALCAO"
-    DELIVERY = "DELIVERY"
-    APP = "APP"
-
-
-class StatusPedido(str, Enum):
-    AGUARDANDO_PAGAMENTO = "AGUARDANDO_PAGAMENTO"
-    EM_PREPARO = "EM_PREPARO"
-    PRONTO = "PRONTO"
-    ENTREGUE = "ENTREGUE"
-    CANCELADO = "CANCELADO"
 
 
 class ItemPedidoInput(BaseModel):
@@ -101,6 +98,29 @@ class PaginatedPedidosResponse(BaseModel):
     meta: PedidoPageMeta
 
 
+class FormaPagamento(str, Enum):
+    PIX = "PIX"
+    CARTAO = "CARTAO"
+    FALHA_GATEWAY = "FALHA_GATEWAY"
+
+
+class PagamentoInput(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    forma_pagamento: FormaPagamento = Field(alias="formaPagamento")
+
+
+class PagamentoResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    pagamento_id: int = Field(alias="pagamentoId")
+    pedido_id: int = Field(alias="pedidoId")
+    status_transacao: str = Field(alias="statusTransacao")
+    mensagem: str
+    valor: Decimal
+    pedido_status: str = Field(alias="pedidoStatus")
+
+
 def _money(amount: Decimal) -> Decimal:
     return amount.quantize(CENTAVO, rounding=ROUND_HALF_UP)
 
@@ -149,6 +169,100 @@ def _serialize_orders(
 
 def _serialize_order(session: Session, order: PedidoModel) -> PedidoResponse:
     return _serialize_orders(session, [order])[0]
+
+
+def _new_payment(
+    *,
+    order_id: int,
+    payment_form: FormaPagamento,
+    amount: Decimal,
+    status: str,
+    transaction_status: str,
+    message: str,
+    order_status: str,
+    idempotency_key: str,
+    gateway_payload: dict[str, object],
+    error_details: dict[str, object] | None = None,
+) -> PagamentoModel:
+    payload: dict[str, object] = {
+        "gateway": gateway_payload,
+        "statusTransacao": transaction_status,
+        "mensagem": message,
+        "pedidoStatus": order_status,
+    }
+    if error_details is not None:
+        payload["detalhesErro"] = error_details
+    return PagamentoModel(
+        pedido_id=order_id,
+        chave_idempotencia=idempotency_key,
+        metodo=payment_form.value,
+        status=status,
+        valor=amount,
+        payload=payload,
+    )
+
+
+def _serialize_payment(payment: PagamentoModel) -> PagamentoResponse:
+    payload = payment.payload
+    return PagamentoResponse(
+        pagamento_id=payment.id,
+        pedido_id=payment.pedido_id,
+        status_transacao=str(payload.get("statusTransacao", payment.status)),
+        mensagem=str(payload.get("mensagem", "Pagamento processado")),
+        valor=payment.valor,
+        pedido_status=str(payload.get("pedidoStatus", "")),
+    )
+
+
+def _persist_payment_attempt(
+    session: Session,
+    payment: PagamentoModel,
+    *,
+    usuario_id: int,
+    unidade_id: int,
+    acao: str,
+) -> None:
+    session.add(payment)
+    session.flush()
+    registrar_auditoria(
+        session,
+        usuario_id=usuario_id,
+        unidade_id=unidade_id,
+        acao=acao,
+        entidade="PEDIDO",
+        entidade_id=payment.pedido_id,
+        detalhes={
+            "pagamentoId": payment.id,
+            "statusTransacao": payment.payload["statusTransacao"],
+        },
+    )
+    session.commit()
+
+
+def _existing_payment_result(payment: PagamentoModel) -> PagamentoResponse:
+    if payment.status == "ERRO_GATEWAY":
+        raise BusinessError(
+            code="PAYMENT_GATEWAY_ERROR",
+            message="O gateway de pagamento está indisponível",
+            status_code=502,
+            details={"pagamentoId": payment.id},
+        )
+    if payment.status == "ERRO_PROCESSAMENTO":
+        raise BusinessError(
+            code="PAYMENT_PROCESSING_ERROR",
+            message="Não foi possível concluir o processamento do pagamento",
+            status_code=503,
+            details={"pagamentoId": payment.id},
+        )
+    if payment.status == "ERRO_ESTOQUE":
+        error_details = payment.payload.get("detalhesErro", {})
+        raise BusinessError(
+            code="ESTOQUE_INSUFICIENTE",
+            message="Estoque insuficiente para concluir o pagamento",
+            status_code=409,
+            details=error_details,
+        )
+    return _serialize_payment(payment)
 
 
 @router.post(
@@ -385,3 +499,257 @@ def get_order(
             details={"pedidoId": order_id},
         )
     return _serialize_order(session, order)
+
+
+@router.post("/{order_id}/pagamento", response_model=PagamentoResponse)
+def pay_order(
+    order_id: int,
+    payload: PagamentoInput,
+    session: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[
+        UsuarioModel, Depends(exigir_perfis("CLIENTE", "ATENDENTE"))
+    ],
+    idempotency_key: Annotated[
+        str, Header(alias="Idempotency-Key", min_length=1, max_length=100)
+    ],
+) -> PagamentoResponse:
+    key = idempotency_key.strip()
+    if not key:
+        raise BusinessError(
+            code="INVALID_IDEMPOTENCY_KEY",
+            message="O cabeçalho Idempotency-Key não pode ficar vazio",
+            status_code=422,
+        )
+
+    order = session.scalar(
+        select(PedidoModel)
+        .where(PedidoModel.id == order_id)
+        .with_for_update()
+    )
+    if order is None or (
+        current_user.perfil == "CLIENTE"
+        and order.cliente_id != current_user.id
+    ):
+        raise BusinessError(
+            code="ORDER_NOT_FOUND",
+            message="Pedido não encontrado",
+            status_code=404,
+            details={"pedidoId": order_id},
+        )
+
+    existing_payment = session.scalar(
+        select(PagamentoModel).where(
+            PagamentoModel.chave_idempotencia == key
+        )
+    )
+    if existing_payment is not None:
+        if existing_payment.pedido_id != order.id:
+            raise BusinessError(
+                code="IDEMPOTENCY_KEY_REUSED",
+                message="A chave de idempotência já foi usada em outro pedido",
+                status_code=409,
+            )
+        return _existing_payment_result(existing_payment)
+
+    if not can_pay_order(order.status):
+        raise BusinessError(
+            code="PAYMENT_NOT_ALLOWED",
+            message="O pedido não está aguardando pagamento",
+            status_code=409,
+            details={"statusAtual": order.status},
+        )
+
+    order_unit_id = order.unidade_id
+    order_status = order.status
+    order_amount = order.total
+    try:
+        gateway_result = mock_payment_gateway.charge(
+            order_amount, payload.forma_pagamento.value
+        )
+    except GatewayUnavailableError:
+        failure_message = "O gateway de pagamento está indisponível"
+        payment = _new_payment(
+            order_id=order.id,
+            payment_form=payload.forma_pagamento,
+            amount=order_amount,
+            status="ERRO_GATEWAY",
+            transaction_status="ERRO",
+            message=failure_message,
+            order_status=order_status,
+            idempotency_key=key,
+            gateway_payload={"erro": "GATEWAY_INDISPONIVEL"},
+        )
+        _persist_payment_attempt(
+            session,
+            payment,
+            usuario_id=current_user.id,
+            unidade_id=order_unit_id,
+            acao="PAGAMENTO_FALHOU",
+        )
+        raise BusinessError(
+            code="PAYMENT_GATEWAY_ERROR",
+            message=failure_message,
+            status_code=502,
+            details={"pagamentoId": payment.id},
+        ) from None
+
+    if not gateway_result.approved:
+        payment = _new_payment(
+            order_id=order.id,
+            payment_form=payload.forma_pagamento,
+            amount=order_amount,
+            status="RECUSADO",
+            transaction_status="RECUSADO",
+            message=gateway_result.message,
+            order_status=order_status,
+            idempotency_key=key,
+            gateway_payload=gateway_result.payload,
+        )
+        _persist_payment_attempt(
+            session,
+            payment,
+            usuario_id=current_user.id,
+            unidade_id=order_unit_id,
+            acao="PAGAMENTO_RECUSADO",
+        )
+        return _serialize_payment(payment)
+
+    order_items = list(
+        session.scalars(
+            select(ItemPedidoModel)
+            .where(ItemPedidoModel.pedido_id == order.id)
+            .order_by(ItemPedidoModel.produto_id)
+        )
+    )
+    movements: list[MovimentacaoEstoqueModel] = []
+    stock_problem: ItemPedidoModel | None = None
+    try:
+        for item in order_items:
+            update_result = session.execute(
+                update(EstoqueModel)
+                .where(
+                    EstoqueModel.unidade_id == order_unit_id,
+                    EstoqueModel.produto_id == item.produto_id,
+                    EstoqueModel.disponivel.is_(True),
+                    EstoqueModel.quantidade >= item.quantidade,
+                )
+                .values(
+                    quantidade=EstoqueModel.quantidade - item.quantidade,
+                    disponivel=EstoqueModel.quantidade > item.quantidade,
+                )
+            )
+            if update_result.rowcount != 1:
+                stock_problem = item
+                break
+            movements.append(
+                MovimentacaoEstoqueModel(
+                    pedido_id=order.id,
+                    unidade_id=order_unit_id,
+                    produto_id=item.produto_id,
+                    usuario_id=current_user.id,
+                    tipo="SAIDA",
+                    quantidade=item.quantidade,
+                )
+            )
+
+        if stock_problem is None:
+            order.status = StatusPedido.EM_PREPARO.value
+            payment = _new_payment(
+                order_id=order.id,
+                payment_form=payload.forma_pagamento,
+                amount=order_amount,
+                status="APROVADO",
+                transaction_status="APROVADO",
+                message=gateway_result.message,
+                order_status=order.status,
+                idempotency_key=key,
+                gateway_payload=gateway_result.payload,
+            )
+            session.add(payment)
+            session.add_all(movements)
+            session.flush()
+            registrar_auditoria(
+                session,
+                usuario_id=current_user.id,
+                unidade_id=order_unit_id,
+                acao="PAGAMENTO_APROVADO",
+                entidade="PEDIDO",
+                entidade_id=order.id,
+                detalhes={
+                    "pagamentoId": payment.id,
+                    "statusAnterior": order_status,
+                    "statusNovo": order.status,
+                },
+            )
+            session.commit()
+    except Exception:
+        session.rollback()
+        message = "Não foi possível concluir o processamento do pagamento"
+        failed_payment = _new_payment(
+            order_id=order_id,
+            payment_form=payload.forma_pagamento,
+            amount=order_amount,
+            status="ERRO_PROCESSAMENTO",
+            transaction_status="ERRO",
+            message=message,
+            order_status=order_status,
+            idempotency_key=key,
+            gateway_payload=gateway_result.payload,
+        )
+        _persist_payment_attempt(
+            session,
+            failed_payment,
+            usuario_id=current_user.id,
+            unidade_id=order_unit_id,
+            acao="PAGAMENTO_ERRO_PROCESSAMENTO",
+        )
+        raise BusinessError(
+            code="PAYMENT_PROCESSING_ERROR",
+            message=message,
+            status_code=503,
+            details={"pagamentoId": failed_payment.id},
+        ) from None
+
+    if stock_problem is not None:
+        session.rollback()
+        stock = session.get(
+            EstoqueModel, (order_unit_id, stock_problem.produto_id)
+        )
+        available = (
+            stock.quantidade
+            if stock is not None and stock.disponivel
+            else 0
+        )
+        details: dict[str, object] = {
+            "produtoId": stock_problem.produto_id,
+            "quantidadeSolicitada": stock_problem.quantidade,
+            "quantidadeDisponivel": available,
+        }
+        message = "Estoque insuficiente para concluir o pagamento"
+        payment = _new_payment(
+            order_id=order_id,
+            payment_form=payload.forma_pagamento,
+            amount=order_amount,
+            status="ERRO_ESTOQUE",
+            transaction_status="APROVADO",
+            message=message,
+            order_status=order_status,
+            idempotency_key=key,
+            gateway_payload=gateway_result.payload,
+            error_details=details,
+        )
+        _persist_payment_attempt(
+            session,
+            payment,
+            usuario_id=current_user.id,
+            unidade_id=order_unit_id,
+            acao="PAGAMENTO_SEM_ESTOQUE",
+        )
+        raise BusinessError(
+            code="ESTOQUE_INSUFICIENTE",
+            message=message,
+            status_code=409,
+            details=details,
+        )
+
+    return _serialize_payment(payment)
