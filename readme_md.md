@@ -186,3 +186,23 @@ O MVP implementado fecha ponta a ponta o **Fluxo A (Pedido → Pagamento Mock �
 
 **Seu Nome Completo**  
 RU: `SEU_RU_AQUI` — UNINTER (2026)
+
+---
+
+## Persistência SQLite
+
+A camada SQLAlchemy fica em `src/infrastructure/database/`. Por padrão, o SQLite
+cria `database.sqlite3` na raiz do repositório; defina `DATABASE_URL` para usar
+outro banco ou arquivo.
+
+Instale as dependências Python de `requirements.txt` e execute as migrations e o
+seed:
+
+```bash
+python -m pip install -r requirements.txt
+alembic upgrade head
+python -m src.infrastructure.database.seed
+```
+
+O seed é idempotente. As contas de demonstração usam a senha `senha123` e os
+e-mails `cliente@teste.local`, `atendente@teste.local` e `gerente@teste.local`.
