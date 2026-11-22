@@ -16,6 +16,7 @@ from src.api.errors import (
     http_exception_handler,
     validation_error_handler,
 )
+from src.api.orders import router as orders_router
 from src.api.stock import router as stock_router
 from src.api.units import router as units_router
 from src.infrastructure.security import get_jwt_secret
@@ -48,6 +49,7 @@ async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResp
 
 
 app.include_router(auth_router)
+app.include_router(orders_router)
 app.include_router(stock_router)
 app.include_router(units_router)
 
