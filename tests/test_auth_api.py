@@ -98,6 +98,7 @@ class AuthApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(duplicate.status_code, 409)
+        self.assertEqual(duplicate.json()["error"], "EMAIL_ALREADY_REGISTERED")
 
     def test_login_jwt_and_bearer_authentication(self) -> None:
         self.register_client()
@@ -124,6 +125,29 @@ class AuthApiTests(unittest.TestCase):
         )
         self.assertEqual(invalid.status_code, 401)
 
+    def test_validation_and_http_errors_use_standard_response(self) -> None:
+        invalid_body = self.client.post("/auth/cadastro", json={})
+        self.assertEqual(invalid_body.status_code, 422)
+        validation_error = invalid_body.json()
+        self.assertEqual(
+            set(validation_error),
+            {"error", "message", "details", "timestamp", "path"},
+        )
+        self.assertEqual(validation_error["error"], "VALIDATION_ERROR")
+        self.assertEqual(validation_error["path"], "/auth/cadastro")
+        self.assertTrue(validation_error["details"])
+
+        unauthorized = self.client.get("/auth/me")
+        self.assertEqual(unauthorized.status_code, 401)
+        auth_error = unauthorized.json()
+        self.assertEqual(
+            set(auth_error),
+            {"error", "message", "details", "timestamp", "path"},
+        )
+        self.assertEqual(auth_error["error"], "HTTP_401")
+        self.assertEqual(auth_error["path"], "/auth/me")
+        self.assertEqual(unauthorized.headers["www-authenticate"], "Bearer")
+
     def test_stock_requires_manager_profile(self) -> None:
         self.register_client()
         client_token = self.login("cliente@example.com")
@@ -131,6 +155,7 @@ class AuthApiTests(unittest.TestCase):
             "/estoque", headers={"Authorization": f"Bearer {client_token}"}
         )
         self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(forbidden.json()["error"], "HTTP_403")
 
         with Session(self.engine) as session:
             session.add(
