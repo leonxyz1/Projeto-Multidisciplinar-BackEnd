@@ -139,25 +139,31 @@ class UnitsApiTests(unittest.TestCase):
         self.assertEqual(unauthenticated.status_code, 401)
         self.assertEqual(unauthenticated.json()["error"], "HTTP_401")
 
-        client_token = self.login("cliente@teste.local")
+        client_token = self.login("cliente@example.com")
         forbidden = self.client.get(
             path, headers={"Authorization": f"Bearer {client_token}"}
         )
         self.assertEqual(forbidden.status_code, 403)
         self.assertEqual(forbidden.json()["error"], "HTTP_403")
 
-        attendant_token = self.login("atendente@teste.local")
+        attendant_token = self.login("atendente@example.com")
         allowed = self.client.get(
             path, headers={"Authorization": f"Bearer {attendant_token}"}
         )
         self.assertEqual(allowed.status_code, 200, allowed.text)
         self.assertEqual(len(allowed.json()), 3)
 
-        manager_token = self.login("gerente@teste.local")
+        manager_token = self.login("gerente@example.com")
         manager_allowed = self.client.get(
             path, headers={"Authorization": f"Bearer {manager_token}"}
         )
         self.assertEqual(manager_allowed.status_code, 200, manager_allowed.text)
+
+        manager_identity = self.client.get(
+            "/auth/me", headers={"Authorization": f"Bearer {manager_token}"}
+        )
+        self.assertEqual(manager_identity.status_code, 200, manager_identity.text)
+        self.assertEqual(manager_identity.json()["email"], "gerente@example.com")
 
         missing_unit = self.client.get(
             "/unidades/999/estoque",
