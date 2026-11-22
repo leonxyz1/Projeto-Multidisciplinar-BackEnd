@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_current_user, get_db
+from src.api.errors import BusinessError
 from src.infrastructure.database.models import UsuarioModel
 from src.infrastructure.security import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -62,16 +63,18 @@ def register(
         select(UsuarioModel.id).where(UsuarioModel.email == email)
     )
     if existing_user is not None:
-        raise HTTPException(
+        raise BusinessError(
+            code="EMAIL_ALREADY_REGISTERED",
+            message="E-mail já cadastrado",
             status_code=status.HTTP_409_CONFLICT,
-            detail="E-mail já cadastrado",
         )
 
     nome = payload.nome.strip()
     if not nome:
-        raise HTTPException(
+        raise BusinessError(
+            code="INVALID_NAME",
+            message="O nome não pode ficar vazio",
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="O nome não pode ficar vazio",
         )
 
     user = UsuarioModel(
@@ -90,9 +93,10 @@ def register(
             select(UsuarioModel.id).where(UsuarioModel.email == email)
         )
         if duplicate is not None:
-            raise HTTPException(
+            raise BusinessError(
+                code="EMAIL_ALREADY_REGISTERED",
+                message="E-mail já cadastrado",
                 status_code=status.HTTP_409_CONFLICT,
-                detail="E-mail já cadastrado",
             ) from None
         raise
     session.refresh(user)
