@@ -1,0 +1,689 @@
+{
+  "info": {
+    "_postman_id": "0ca3ae4c-9a9a-4bfc-a0d4-4a86425fc62e",
+    "name": "Raizes do Nordeste - Plano de Testes da API",
+    "description": "Colecao executavel da API. Execute todos os requests na ordem, depois de aplicar as migrations e rodar o seed. Os scripts guardam tokens, IDs de unidade/produto e IDs de pedidos para dispensar copia manual. Resultado esperado: todos os testes passam.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login - cliente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "cliente@example.com",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "senha123",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Resposta contém token bearer', function () { pm.expect(body.token_type).to.eql('bearer'); });",
+                  "pm.expect(body.access_token).to.be.a('string').and.not.empty;",
+                  "pm.collectionVariables.set('clienteToken', body.access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login - gerente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "gerente@example.com",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "senha123",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Resposta informa expiracao do token', function () { pm.expect(body.expires_in).to.be.a('number').and.above(0); });",
+                  "pm.expect(body.access_token).to.be.a('string').and.not.empty;",
+                  "pm.collectionVariables.set('gerenteToken', body.access_token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Unidades e Produtos",
+      "item": [
+        {
+          "name": "Listar unidades e guardar ID da Unidade Centro",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/unidades"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Resposta lista unidades', function () { pm.expect(body).to.be.an('array').that.is.not.empty; });",
+                  "const unit = body.find((item) => item.nome === 'Unidade Centro');",
+                  "pm.expect(unit, 'Unidade Centro do seed').to.exist;",
+                  "pm.collectionVariables.set('unidadeCentroId', String(unit.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar produtos e guardar IDs do seed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/unidades/{{unidadeCentroId}}/produtos"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Resposta contém itens e total', function () { pm.expect(body.items).to.be.an('array').that.is.not.empty; pm.expect(body.meta.total).to.be.above(0); });",
+                  "const available = body.items.find((item) => item.sku === 'TESTE-001');",
+                  "const unavailable = body.items.find((item) => item.sku === 'TESTE-003');",
+                  "pm.expect(available, 'Produto TESTE-001 do seed').to.exist;",
+                  "pm.expect(unavailable, 'Produto TESTE-003 do seed').to.exist;",
+                  "pm.collectionVariables.set('produtoDisponivelId', String(available.id));",
+                  "pm.collectionVariables.set('produtoSemEstoqueId', String(unavailable.id));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Pedidos",
+      "item": [
+        {
+          "name": "Criar pedido - canal APP",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"canalPedido\": \"APP\",\n  \"unidadeId\": {{unidadeCentroId}},\n  \"itens\": [\n    { \"produtoId\": {{produtoDisponivelId}}, \"quantidade\": 1 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/pedidos"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('Pedido criado aguardando pagamento', function () { pm.expect(body.status).to.eql('AGUARDANDO_PAGAMENTO'); });",
+                  "pm.expect(body.id).to.be.a('number');",
+                  "pm.collectionVariables.set('pedidoId', String(body.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Criar pedido - canal BALCAO para pagamento recusado",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"canalPedido\": \"BALCAO\",\n  \"unidadeId\": {{unidadeCentroId}},\n  \"itens\": [\n    { \"produtoId\": {{produtoDisponivelId}}, \"quantidade\": 1 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/pedidos"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('Pedido BALCAO criado', function () { pm.expect(body.canalPedido).to.eql('BALCAO'); });",
+                  "pm.expect(body.id).to.be.a('number');",
+                  "pm.collectionVariables.set('pedidoRecusadoId', String(body.id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Filtrar pedidos pelo canal APP",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/pedidos?canalPedido=APP"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Filtro retorna o pedido APP criado', function () { pm.expect(body.items).to.be.an('array').that.is.not.empty; pm.expect(body.items.some((item) => String(item.id) === pm.collectionVariables.get('pedidoId') && item.canalPedido === 'APP')).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - pedido inexistente",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/pedidos/999999999"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 404', function () { pm.response.to.have.status(404); });",
+                  "pm.test('Erro identifica pedido inexistente', function () { pm.expect(body.error).to.eql('ORDER_NOT_FOUND'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 - pedido excede estoque disponivel",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"canalPedido\": \"APP\",\n  \"unidadeId\": {{unidadeCentroId}},\n  \"itens\": [\n    { \"produtoId\": {{produtoSemEstoqueId}}, \"quantidade\": 1 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/pedidos"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 409', function () { pm.response.to.have.status(409); });",
+                  "pm.test('Erro informa estoque insuficiente', function () { pm.expect(body.error).to.eql('ESTOQUE_INSUFICIENTE'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "409 - transicao de status invalida para gerente",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{gerenteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ENTREGUE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/pedidos/{{pedidoId}}/status"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 409', function () { pm.response.to.have.status(409); });",
+                  "pm.test('Erro identifica transicao invalida', function () { pm.expect(body.error).to.eql('INVALID_STATUS_TRANSITION'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Auditoria - verificar eventos do pedido",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{gerenteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auditoria?entidade=PEDIDO&entidade_id={{pedidoId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Auditoria registra a criacao do pedido', function () { pm.expect(body).to.be.an('array').that.is.not.empty; pm.expect(body.some((entry) => String(entry.entidade_id) === pm.collectionVariables.get('pedidoId') && entry.acao === 'PEDIDO_CRIADO')).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Pagamentos",
+      "item": [
+        {
+          "name": "Pagamento aprovado via PIX",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-aprovado-{{pedidoId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formaPagamento\": \"PIX\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/pedidos/{{pedidoId}}/pagamento"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Pagamento aprovado e pedido em preparo', function () { pm.expect(body.statusTransacao).to.eql('APROVADO'); pm.expect(body.pedidoStatus).to.eql('EM_PREPARO'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pagamento recusado via CARTAO",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-recusado-{{pedidoRecusadoId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"formaPagamento\": \"CARTAO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/pedidos/{{pedidoRecusadoId}}/pagamento"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Gateway mock recusa o pagamento', function () { pm.expect(body.statusTransacao).to.eql('RECUSADO'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Erros",
+      "item": [
+        {
+          "name": "401 - identidade sem token",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/me"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 401', function () { pm.response.to.have.status(401); });",
+                  "pm.test('Erro identifica falta de autenticacao', function () { pm.expect(body.error).to.eql('HTTP_401'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 - cliente sem permissao para consultar estoque",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/estoque"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 403', function () { pm.response.to.have.status(403); });",
+                  "pm.test('Erro identifica perfil sem permissao', function () { pm.expect(body.error).to.eql('HTTP_403'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "422 - pedido sem canalPedido",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"unidadeId\": {{unidadeCentroId}},\n  \"itens\": [\n    { \"produtoId\": {{produtoDisponivelId}}, \"quantidade\": 1 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/pedidos"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 422', function () { pm.response.to.have.status(422); });",
+                  "pm.test('Erro identifica validacao', function () { pm.expect(body.error).to.eql('VALIDATION_ERROR'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    },
+    {
+      "key": "clienteToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "gerenteToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "unidadeCentroId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "produtoDisponivelId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "produtoSemEstoqueId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pedidoId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pedidoRecusadoId",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
