@@ -13,6 +13,7 @@ from src.domain.orders import (
     OrderChannel as CanalPedido,
     OrderStatus as StatusPedido,
     can_pay_order,
+    pode_transitar,
 )
 from src.infrastructure.audit import registrar_auditoria
 from src.infrastructure.database.models import (
@@ -119,6 +120,10 @@ class PagamentoResponse(BaseModel):
     mensagem: str
     valor: Decimal
     pedido_status: str = Field(alias="pedidoStatus")
+
+
+class AtualizacaoStatusInput(BaseModel):
+    status: StatusPedido
 
 
 def _money(amount: Decimal) -> Decimal:
@@ -753,3 +758,66 @@ def pay_order(
         )
 
     return _serialize_payment(payment)
+
+
+@router.patch("/{order_id}/status", response_model=PedidoResponse)
+def update_order_status(
+    order_id: int,
+    payload: AtualizacaoStatusInput,
+    session: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[
+        UsuarioModel,
+        Depends(
+            exigir_perfis("CLIENTE", "ATENDENTE", "GERENTE", "COZINHA")
+        ),
+    ],
+) -> PedidoResponse:
+    order = session.scalar(
+        select(PedidoModel)
+        .where(PedidoModel.id == order_id)
+        .with_for_update()
+    )
+    if order is None or (
+        current_user.perfil == "CLIENTE"
+        and order.cliente_id != current_user.id
+    ):
+        raise BusinessError(
+            code="ORDER_NOT_FOUND",
+            message="Pedido não encontrado",
+            status_code=404,
+            details={"pedidoId": order_id},
+        )
+
+    previous_status = order.status
+    next_status = payload.status.value
+    if not pode_transitar(previous_status, next_status, current_user.perfil):
+        raise BusinessError(
+            code="INVALID_STATUS_TRANSITION",
+            message="Transição de status não permitida para este perfil",
+            status_code=409,
+            details={
+                "origem": previous_status,
+                "destino": next_status,
+            },
+        )
+
+    try:
+        order.status = next_status
+        registrar_auditoria(
+            session,
+            usuario_id=current_user.id,
+            unidade_id=order.unidade_id,
+            acao="STATUS_PEDIDO_ATUALIZADO",
+            entidade="PEDIDO",
+            entidade_id=order.id,
+            detalhes={
+                "statusAnterior": previous_status,
+                "statusNovo": next_status,
+            },
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+    return _serialize_order(session, order)

@@ -127,6 +127,13 @@ class OrdersApiTests(unittest.TestCase):
             },
         )
 
+    def set_order_status(self, token: str, order_id: int, new_status: str):
+        return self.client.patch(
+            f"/pedidos/{order_id}/status",
+            json={"status": new_status},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
     def test_client_creates_order_using_database_price_and_auditing(self) -> None:
         token = self.login("cliente@teste.local")
         response = self.client.post(
@@ -612,6 +619,86 @@ class OrdersApiTests(unittest.TestCase):
             )
             payment = session.scalar(select(PagamentoModel))
             self.assertEqual(payment.status, "ERRO_PROCESSAMENTO")
+
+    def test_status_changes_enforce_transition_profiles_and_audit(self) -> None:
+        client_token = self.login("cliente@teste.local")
+        cancelled_order = self.create_order(client_token)
+        invalid_status = self.set_order_status(
+            client_token, cancelled_order["id"], "EM_PREPARO"
+        )
+        self.assertEqual(invalid_status.status_code, 409)
+        self.assertEqual(
+            invalid_status.json()["error"], "INVALID_STATUS_TRANSITION"
+        )
+        self.assertEqual(
+            invalid_status.json()["details"],
+            {
+                "origem": "AGUARDANDO_PAGAMENTO",
+                "destino": "EM_PREPARO",
+            },
+        )
+
+        cancelled = self.set_order_status(
+            client_token, cancelled_order["id"], "CANCELADO"
+        )
+        self.assertEqual(cancelled.status_code, 200, cancelled.text)
+        self.assertEqual(cancelled.json()["status"], "CANCELADO")
+        repeated_cancel = self.set_order_status(
+            client_token, cancelled_order["id"], "CANCELADO"
+        )
+        self.assertEqual(repeated_cancel.status_code, 409)
+
+        paid_order = self.create_order(client_token)
+        paid = self.pay_order(
+            client_token, paid_order["id"], "PIX", "status-transition-key"
+        )
+        self.assertEqual(paid.status_code, 200, paid.text)
+        attendant_token = self.login("atendente@teste.local")
+        wrong_profile = self.set_order_status(
+            attendant_token, paid_order["id"], "PRONTO"
+        )
+        self.assertEqual(wrong_profile.status_code, 409)
+        self.assertEqual(
+            wrong_profile.json()["details"],
+            {"origem": "EM_PREPARO", "destino": "PRONTO"},
+        )
+
+        kitchen_token = self.login("cozinha@teste.local")
+        ready = self.set_order_status(
+            kitchen_token, paid_order["id"], "PRONTO"
+        )
+        self.assertEqual(ready.status_code, 200, ready.text)
+        self.assertEqual(ready.json()["status"], "PRONTO")
+        delivered = self.set_order_status(
+            attendant_token, paid_order["id"], "ENTREGUE"
+        )
+        self.assertEqual(delivered.status_code, 200, delivered.text)
+        self.assertEqual(delivered.json()["status"], "ENTREGUE")
+
+        invalid_value = self.set_order_status(
+            attendant_token, paid_order["id"], "DESCONHECIDO"
+        )
+        self.assertEqual(invalid_value.status_code, 422)
+        self.assertEqual(invalid_value.json()["error"], "VALIDATION_ERROR")
+
+        with Session(self.engine) as session:
+            updates = list(
+                session.scalars(
+                    select(AuditoriaModel).where(
+                        AuditoriaModel.entidade_id == paid_order["id"],
+                        AuditoriaModel.acao == "STATUS_PEDIDO_ATUALIZADO",
+                    ).order_by(AuditoriaModel.id)
+                )
+            )
+            self.assertEqual(len(updates), 2)
+            self.assertEqual(
+                updates[0].detalhes,
+                {"statusAnterior": "EM_PREPARO", "statusNovo": "PRONTO"},
+            )
+            self.assertEqual(
+                updates[1].detalhes,
+                {"statusAnterior": "PRONTO", "statusNovo": "ENTREGUE"},
+            )
 
 
 if __name__ == "__main__":
