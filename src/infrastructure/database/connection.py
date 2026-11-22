@@ -22,7 +22,7 @@ engine = create_engine(
 if DATABASE_URL.startswith("sqlite"):
 
     @event.listens_for(engine, "connect")
-    def enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
+    def enable_sqlite_foreign_keys(dbapi_connection, _) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
