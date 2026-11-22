@@ -69,6 +69,34 @@ Com as dependências instaladas, execute:
 python -m unittest discover -s tests -v
 ```
 
+### Coleção Postman
+
+Importe [postman/Raizes-do-Nordeste.postman_collection.json](postman/Raizes-do-Nordeste.postman_collection.json)
+no Postman. A variável `baseUrl` já aponta para `http://127.0.0.1:8000`; ajuste-a
+se a API estiver em outro endereço. A coleção contém 16 requisições com testes
+de status e corpo, organizadas em Auth, Unidades e Produtos, Pedidos,
+Pagamentos e Erros. Execute a coleção inteira no Collection Runner, sem
+reordenar nem desmarcar requisições. Os scripts guardam os tokens e IDs
+necessários durante a execução.
+
+Para repetir a execução com um banco limpo, pare a API e use um arquivo SQLite
+dedicado à coleção:
+
+```bash
+rm -f postman.sqlite3
+export DATABASE_URL=sqlite:///./postman.sqlite3
+export JWT_SECRET="$(openssl rand -hex 32)"
+alembic upgrade head
+python -m src.infrastructure.database.seed
+uvicorn src.main:app --reload
+```
+
+Com a API em execução, rode a coleção no Postman. Para a evidência do PDF,
+capture a tela de resumo do Runner mostrando todos os testes aprovados e,
+se necessário, os detalhes dos requests negativos (401, 403, 404, 409 e 422).
+O comando de `unittest` acima é independente do banco da API; registre também
+seu resultado no PDF.
+
 ## Banco e arquivos locais
 
 Por padrão, SQLite usa `database.sqlite3` na raiz. `DATABASE_URL` permite

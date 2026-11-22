@@ -1,0 +1,31 @@
+test_login_jwt_and_bearer_authentication (test_auth_api.AuthApiTests.test_login_jwt_and_bearer_authentication) ... ok
+test_registration_hashes_password_and_does_not_allow_role_escalation (test_auth_api.AuthApiTests.test_registration_hashes_password_and_does_not_allow_role_escalation) ... ok
+test_stock_requires_manager_profile (test_auth_api.AuthApiTests.test_stock_requires_manager_profile) ... ok
+test_validation_and_http_errors_use_standard_response (test_auth_api.AuthApiTests.test_validation_and_http_errors_use_standard_response) ... ok
+test_order_relationships_distinguish_customer_and_creator (test_database_seed.DatabaseSeedTests.test_order_relationships_distinguish_customer_and_creator) ... ok
+test_seed_is_idempotent_and_preserves_decimal_prices (test_database_seed.DatabaseSeedTests.test_seed_is_idempotent_and_preserves_decimal_prices) ... ok
+test_api_metadata_and_resource_tags_are_documented (test_openapi.OpenApiTests.test_api_metadata_and_resource_tags_are_documented) ... ok
+test_registration_response_does_not_expose_password_hash (test_openapi.OpenApiTests.test_registration_response_does_not_expose_password_hash) ... ok
+test_sensitive_routes_document_error_contract (test_openapi.OpenApiTests.test_sensitive_routes_document_error_contract) ... ok
+test_approved_payment_is_idempotent_and_decrements_stock_once (test_orders_api.OrdersApiTests.test_approved_payment_is_idempotent_and_decrements_stock_once) ... ok
+test_approved_payment_rolls_back_if_audit_fails (test_orders_api.OrdersApiTests.test_approved_payment_rolls_back_if_audit_fails) ... ok
+test_attendant_can_create_order_for_customer (test_orders_api.OrdersApiTests.test_attendant_can_create_order_for_customer) ... ok
+test_audit_endpoint_is_manager_only_and_filters_orders (test_orders_api.OrdersApiTests.test_audit_endpoint_is_manager_only_and_filters_orders) ... ok
+test_client_creates_order_using_database_price_and_auditing (test_orders_api.OrdersApiTests.test_client_creates_order_using_database_price_and_auditing) ... ok
+test_customer_cannot_pay_another_customers_order (test_orders_api.OrdersApiTests.test_customer_cannot_pay_another_customers_order) ... ok
+test_customer_list_and_detail_are_scoped_to_authenticated_user (test_orders_api.OrdersApiTests.test_customer_list_and_detail_are_scoped_to_authenticated_user) ... ok
+test_declined_and_failed_gateway_attempts_are_persisted (test_orders_api.OrdersApiTests.test_declined_and_failed_gateway_attempts_are_persisted) ... ok
+test_failed_audit_rolls_back_order_and_items (test_orders_api.OrdersApiTests.test_failed_audit_rolls_back_order_and_items) ... ok
+test_order_filters_pagination_and_kitchen_queue (test_orders_api.OrdersApiTests.test_order_filters_pagination_and_kitchen_queue) ... ok
+test_order_input_missing_unit_product_or_stock_returns_defined_errors (test_orders_api.OrdersApiTests.test_order_input_missing_unit_product_or_stock_returns_defined_errors) ... ok
+test_payment_requires_valid_form_and_idempotency_key (test_orders_api.OrdersApiTests.test_payment_requires_valid_form_and_idempotency_key) ... ok
+test_status_changes_enforce_transition_profiles_and_audit (test_orders_api.OrdersApiTests.test_status_changes_enforce_transition_profiles_and_audit) ... ok
+test_stock_race_rolls_back_all_decrements_and_keeps_order_pending (test_orders_api.OrdersApiTests.test_stock_race_rolls_back_all_decrements_and_keeps_order_pending) ... ok
+test_active_units_and_unit_specific_paginated_menus (test_units_api.UnitsApiTests.test_active_units_and_unit_specific_paginated_menus) ... ok
+test_unit_menu_validates_pagination_and_missing_unit (test_units_api.UnitsApiTests.test_unit_menu_validates_pagination_and_missing_unit) ... ok
+test_unit_stock_requires_attendant_or_manager (test_units_api.UnitsApiTests.test_unit_stock_requires_attendant_or_manager) ... ok
+
+----------------------------------------------------------------------
+Ran 26 tests in 21.194s
+
+OK
