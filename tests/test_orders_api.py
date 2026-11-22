@@ -19,6 +19,7 @@ from src.infrastructure.database.models import (
     UsuarioModel,
 )
 from src.infrastructure.database.seed import seed_data
+from src.infrastructure.security import hash_password
 from src.main import app
 
 
@@ -35,6 +36,14 @@ class OrdersApiTests(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         with Session(self.engine) as session, session.begin():
             seed_data(session)
+            session.add(
+                UsuarioModel(
+                    nome="Cozinha Teste",
+                    email="cozinha@teste.local",
+                    senha_hash=hash_password("senha123"),
+                    perfil="COZINHA",
+                )
+            )
 
         self.original_overrides = app.dependency_overrides.copy()
 
@@ -91,6 +100,15 @@ class OrdersApiTests(unittest.TestCase):
                 }
             ],
         }
+
+    def create_order(self, token: str, channel: str = "APP") -> dict[str, object]:
+        response = self.client.post(
+            "/pedidos",
+            json=self.request_body(canal=channel),
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
 
     def test_client_creates_order_using_database_price_and_auditing(self) -> None:
         token = self.login("cliente@teste.local")
@@ -221,6 +239,122 @@ class OrdersApiTests(unittest.TestCase):
                 ),
                 0,
             )
+
+    def test_customer_list_and_detail_are_scoped_to_authenticated_user(self) -> None:
+        first_customer_token = self.login("cliente@teste.local")
+        first_order = self.create_order(first_customer_token)
+
+        registration = self.client.post(
+            "/auth/cadastro",
+            json={
+                "nome": "Segundo Cliente",
+                "email": "segundo@example.com",
+                "senha": "senha123",
+            },
+        )
+        self.assertEqual(registration.status_code, 201, registration.text)
+        second_customer_token = self.login("segundo@example.com")
+        second_order = self.create_order(second_customer_token)
+
+        second_customer_list = self.client.get(
+            f"/pedidos?clienteId={first_order['clienteId']}",
+            headers={"Authorization": f"Bearer {second_customer_token}"},
+        )
+        self.assertEqual(second_customer_list.status_code, 200)
+        body = second_customer_list.json()
+        self.assertEqual(body["meta"]["total"], 1)
+        self.assertEqual([item["id"] for item in body["items"]], [second_order["id"]])
+
+        foreign_order = self.client.get(
+            f"/pedidos/{first_order['id']}",
+            headers={"Authorization": f"Bearer {second_customer_token}"},
+        )
+        own_order = self.client.get(
+            f"/pedidos/{second_order['id']}",
+            headers={"Authorization": f"Bearer {second_customer_token}"},
+        )
+        self.assertEqual(foreign_order.status_code, 404)
+        self.assertEqual(foreign_order.json()["error"], "ORDER_NOT_FOUND")
+        self.assertEqual(own_order.status_code, 200, own_order.text)
+
+    def test_order_filters_pagination_and_kitchen_queue(self) -> None:
+        client_token = self.login("cliente@teste.local")
+        preparing = self.create_order(client_token, channel="APP")
+        waiting = self.create_order(client_token, channel="BALCAO")
+        with Session(self.engine) as session:
+            session.get(PedidoModel, preparing["id"]).status = "EM_PREPARO"
+            session.get(PedidoModel, waiting["id"]).status = "AGUARDANDO_PAGAMENTO"
+            session.commit()
+
+        manager_token = self.login("gerente@teste.local")
+        filtered = self.client.get(
+            "/pedidos?canalPedido=APP&status=EM_PREPARO&page=1&limit=1",
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
+        self.assertEqual(filtered.status_code, 200, filtered.text)
+        self.assertEqual(filtered.json()["meta"]["total"], 1)
+        self.assertEqual(filtered.json()["items"][0]["id"], preparing["id"])
+        self.assertEqual(len(filtered.json()["items"]), 1)
+
+        invalid_filter = self.client.get(
+            "/pedidos?status=INVALIDO",
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
+        invalid_channel = self.client.get(
+            "/pedidos?canalPedido=INVALIDO",
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
+        self.assertEqual(invalid_filter.status_code, 422)
+        self.assertEqual(invalid_filter.json()["error"], "VALIDATION_ERROR")
+        self.assertEqual(invalid_channel.status_code, 422)
+        self.assertEqual(invalid_channel.json()["error"], "VALIDATION_ERROR")
+
+        attendant_token = self.login("atendente@teste.local")
+        attendant_list = self.client.get(
+            "/pedidos?page=1&limit=1",
+            headers={"Authorization": f"Bearer {attendant_token}"},
+        )
+        self.assertEqual(attendant_list.status_code, 200)
+        self.assertEqual(attendant_list.json()["meta"]["total"], 2)
+        attendant_second_page = self.client.get(
+            "/pedidos?page=2&limit=1",
+            headers={"Authorization": f"Bearer {attendant_token}"},
+        )
+        self.assertEqual(attendant_second_page.status_code, 200)
+        self.assertEqual(len(attendant_second_page.json()["items"]), 1)
+        self.assertNotEqual(
+            attendant_list.json()["items"][0]["id"],
+            attendant_second_page.json()["items"][0]["id"],
+        )
+
+        kitchen_token = self.login("cozinha@teste.local")
+        kitchen_queue = self.client.get(
+            "/pedidos", headers={"Authorization": f"Bearer {kitchen_token}"}
+        )
+        self.assertEqual(kitchen_queue.status_code, 200)
+        self.assertEqual(kitchen_queue.json()["meta"]["total"], 1)
+        self.assertEqual(
+            kitchen_queue.json()["items"][0]["status"], "EM_PREPARO"
+        )
+        kitchen_filtered = self.client.get(
+            "/pedidos?status=AGUARDANDO_PAGAMENTO",
+            headers={"Authorization": f"Bearer {kitchen_token}"},
+        )
+        self.assertEqual(kitchen_filtered.status_code, 403)
+        self.assertEqual(
+            kitchen_filtered.json()["error"], "KITCHEN_QUEUE_ONLY"
+        )
+
+        hidden_order = self.client.get(
+            f"/pedidos/{waiting['id']}",
+            headers={"Authorization": f"Bearer {kitchen_token}"},
+        )
+        visible_order = self.client.get(
+            f"/pedidos/{preparing['id']}",
+            headers={"Authorization": f"Bearer {kitchen_token}"},
+        )
+        self.assertEqual(hidden_order.status_code, 404)
+        self.assertEqual(visible_order.status_code, 200, visible_order.text)
 
 
 if __name__ == "__main__":
