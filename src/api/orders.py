@@ -105,35 +105,50 @@ def _money(amount: Decimal) -> Decimal:
     return amount.quantize(CENTAVO, rounding=ROUND_HALF_UP)
 
 
-def _serialize_order(session: Session, order: PedidoModel) -> PedidoResponse:
-    item_rows = session.execute(
-        select(ItemPedidoModel, ProdutoModel.nome)
-        .join(ProdutoModel, ProdutoModel.id == ItemPedidoModel.produto_id)
-        .where(ItemPedidoModel.pedido_id == order.id)
-        .order_by(ItemPedidoModel.produto_id)
-    ).all()
-    return PedidoResponse(
-        id=order.id,
-        cliente_id=order.cliente_id,
-        criado_por_id=order.criado_por_id,
-        unidade_id=order.unidade_id,
-        canal_pedido=order.canal_pedido,
-        status=order.status,
-        valor_bruto=order.valor_bruto,
-        valor_desconto=order.valor_desconto,
-        total=order.total,
-        criado_em=order.created_at.isoformat(),
-        itens=[
-            ItemPedidoResponse(
-                produto_id=item.produto_id,
-                nome_produto=nome,
-                quantidade=item.quantidade,
-                preco_unitario=item.preco_unitario,
-                subtotal=item.subtotal,
+def _serialize_orders(
+    session: Session, orders: list[PedidoModel]
+) -> list[PedidoResponse]:
+    items_by_order: dict[int, list[ItemPedidoResponse]] = {}
+    if orders:
+        item_rows = session.execute(
+            select(ItemPedidoModel, ProdutoModel.nome)
+            .join(ProdutoModel, ProdutoModel.id == ItemPedidoModel.produto_id)
+            .where(
+                ItemPedidoModel.pedido_id.in_([order.id for order in orders])
             )
-            for item, nome in item_rows
-        ],
-    )
+            .order_by(ItemPedidoModel.pedido_id, ItemPedidoModel.produto_id)
+        ).all()
+        for item, name in item_rows:
+            items_by_order.setdefault(item.pedido_id, []).append(
+                ItemPedidoResponse(
+                    produto_id=item.produto_id,
+                    nome_produto=name,
+                    quantidade=item.quantidade,
+                    preco_unitario=item.preco_unitario,
+                    subtotal=item.subtotal,
+                )
+            )
+
+    return [
+        PedidoResponse(
+            id=order.id,
+            cliente_id=order.cliente_id,
+            criado_por_id=order.criado_por_id,
+            unidade_id=order.unidade_id,
+            canal_pedido=order.canal_pedido,
+            status=order.status,
+            valor_bruto=order.valor_bruto,
+            valor_desconto=order.valor_desconto,
+            total=order.total,
+            criado_em=order.created_at.isoformat(),
+            itens=items_by_order.get(order.id, []),
+        )
+        for order in orders
+    ]
+
+
+def _serialize_order(session: Session, order: PedidoModel) -> PedidoResponse:
+    return _serialize_orders(session, [order])[0]
 
 
 @router.post(
@@ -280,4 +295,93 @@ def create_order(
         session.rollback()
         raise
 
+    return _serialize_order(session, order)
+
+
+@router.get("", response_model=PaginatedPedidosResponse)
+def list_orders(
+    session: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[
+        UsuarioModel,
+        Depends(
+            exigir_perfis("CLIENTE", "ATENDENTE", "GERENTE", "COZINHA")
+        ),
+    ],
+    canal_pedido: Annotated[CanalPedido | None, Query(alias="canalPedido")] = None,
+    status_pedido: Annotated[StatusPedido | None, Query(alias="status")] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+) -> PaginatedPedidosResponse:
+    filters = []
+    if canal_pedido is not None:
+        filters.append(PedidoModel.canal_pedido == canal_pedido.value)
+    if status_pedido is not None:
+        filters.append(PedidoModel.status == status_pedido.value)
+
+    if current_user.perfil == "CLIENTE":
+        filters.append(PedidoModel.cliente_id == current_user.id)
+    elif current_user.perfil == "COZINHA":
+        if (
+            status_pedido is not None
+            and status_pedido is not StatusPedido.EM_PREPARO
+        ):
+            raise BusinessError(
+                code="KITCHEN_QUEUE_ONLY",
+                message="Cozinha pode consultar apenas pedidos em preparo",
+                status_code=403,
+            )
+        filters.append(
+            PedidoModel.status == StatusPedido.EM_PREPARO.value
+        )
+
+    total = session.scalar(
+        select(func.count(PedidoModel.id)).where(*filters)
+    )
+    orders = list(
+        session.scalars(
+            select(PedidoModel)
+            .where(*filters)
+            .order_by(PedidoModel.created_at.desc(), PedidoModel.id.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+    )
+    return PaginatedPedidosResponse(
+        items=_serialize_orders(session, orders),
+        meta=PedidoPageMeta(page=page, limit=limit, total=total or 0),
+    )
+
+
+@router.get("/{order_id}", response_model=PedidoResponse)
+def get_order(
+    order_id: int,
+    session: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[
+        UsuarioModel,
+        Depends(
+            exigir_perfis("CLIENTE", "ATENDENTE", "GERENTE", "COZINHA")
+        ),
+    ],
+) -> PedidoResponse:
+    order = session.get(PedidoModel, order_id)
+    if order is None or (
+        current_user.perfil == "CLIENTE"
+        and order.cliente_id != current_user.id
+    ):
+        raise BusinessError(
+            code="ORDER_NOT_FOUND",
+            message="Pedido não encontrado",
+            status_code=404,
+            details={"pedidoId": order_id},
+        )
+    if (
+        current_user.perfil == "COZINHA"
+        and order.status != StatusPedido.EM_PREPARO.value
+    ):
+        raise BusinessError(
+            code="ORDER_NOT_FOUND",
+            message="Pedido não encontrado",
+            status_code=404,
+            details={"pedidoId": order_id},
+        )
     return _serialize_order(session, order)
