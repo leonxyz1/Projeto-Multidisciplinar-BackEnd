@@ -44,7 +44,7 @@ class OrdersApiTests(unittest.TestCase):
             session.add(
                 UsuarioModel(
                     nome="Cozinha Teste",
-                    email="cozinha@teste.local",
+                    email="cozinha@example.com",
                     senha_hash=hash_password("senha123"),
                     perfil="COZINHA",
                 )
@@ -135,7 +135,7 @@ class OrdersApiTests(unittest.TestCase):
         )
 
     def test_client_creates_order_using_database_price_and_auditing(self) -> None:
-        token = self.login("cliente@teste.local")
+        token = self.login("cliente@example.com")
         response = self.client.post(
             "/pedidos",
             json=self.request_body(quantidade=2, precoUnitario="0.01"),
@@ -151,7 +151,7 @@ class OrdersApiTests(unittest.TestCase):
         self.assertEqual(body["total"], "79.80")
         self.assertEqual(body["itens"][0]["precoUnitario"], "39.90")
 
-        customer_id = self.database_id(UsuarioModel, email="cliente@teste.local")
+        customer_id = self.database_id(UsuarioModel, email="cliente@example.com")
         self.assertEqual(body["clienteId"], customer_id)
         self.assertEqual(body["criadoPorId"], customer_id)
 
@@ -169,7 +169,7 @@ class OrdersApiTests(unittest.TestCase):
     def test_order_input_missing_unit_product_or_stock_returns_defined_errors(
         self,
     ) -> None:
-        token = self.login("cliente@teste.local")
+        token = self.login("cliente@example.com")
         headers = {"Authorization": f"Bearer {token}"}
 
         missing_channel = self.client.post(
@@ -222,8 +222,8 @@ class OrdersApiTests(unittest.TestCase):
         )
 
     def test_attendant_can_create_order_for_customer(self) -> None:
-        attendant_token = self.login("atendente@teste.local")
-        customer_id = self.database_id(UsuarioModel, email="cliente@teste.local")
+        attendant_token = self.login("atendente@example.com")
+        customer_id = self.database_id(UsuarioModel, email="cliente@example.com")
         body = self.request_body(canal="BALCAO")
         body["clienteId"] = customer_id
 
@@ -240,7 +240,7 @@ class OrdersApiTests(unittest.TestCase):
         )
 
     def test_failed_audit_rolls_back_order_and_items(self) -> None:
-        token = self.login("cliente@teste.local")
+        token = self.login("cliente@example.com")
         with self.assertLogs("src.main", level="ERROR"):
             with patch(
                 "src.api.orders.registrar_auditoria",
@@ -265,7 +265,7 @@ class OrdersApiTests(unittest.TestCase):
             )
 
     def test_customer_list_and_detail_are_scoped_to_authenticated_user(self) -> None:
-        first_customer_token = self.login("cliente@teste.local")
+        first_customer_token = self.login("cliente@example.com")
         first_order = self.create_order(first_customer_token)
 
         registration = self.client.post(
@@ -302,7 +302,7 @@ class OrdersApiTests(unittest.TestCase):
         self.assertEqual(own_order.status_code, 200, own_order.text)
 
     def test_order_filters_pagination_and_kitchen_queue(self) -> None:
-        client_token = self.login("cliente@teste.local")
+        client_token = self.login("cliente@example.com")
         preparing = self.create_order(client_token, channel="APP")
         waiting = self.create_order(client_token, channel="BALCAO")
         with Session(self.engine) as session:
@@ -310,7 +310,7 @@ class OrdersApiTests(unittest.TestCase):
             session.get(PedidoModel, waiting["id"]).status = "AGUARDANDO_PAGAMENTO"
             session.commit()
 
-        manager_token = self.login("gerente@teste.local")
+        manager_token = self.login("gerente@example.com")
         filtered = self.client.get(
             "/pedidos?canalPedido=APP&status=EM_PREPARO&page=1&limit=1",
             headers={"Authorization": f"Bearer {manager_token}"},
@@ -333,7 +333,7 @@ class OrdersApiTests(unittest.TestCase):
         self.assertEqual(invalid_channel.status_code, 422)
         self.assertEqual(invalid_channel.json()["error"], "VALIDATION_ERROR")
 
-        attendant_token = self.login("atendente@teste.local")
+        attendant_token = self.login("atendente@example.com")
         attendant_list = self.client.get(
             "/pedidos?page=1&limit=1",
             headers={"Authorization": f"Bearer {attendant_token}"},
@@ -351,7 +351,7 @@ class OrdersApiTests(unittest.TestCase):
             attendant_second_page.json()["items"][0]["id"],
         )
 
-        kitchen_token = self.login("cozinha@teste.local")
+        kitchen_token = self.login("cozinha@example.com")
         kitchen_queue = self.client.get(
             "/pedidos", headers={"Authorization": f"Bearer {kitchen_token}"}
         )
@@ -381,7 +381,7 @@ class OrdersApiTests(unittest.TestCase):
         self.assertEqual(visible_order.status_code, 200, visible_order.text)
 
     def test_approved_payment_is_idempotent_and_decrements_stock_once(self) -> None:
-        token = self.login("cliente@teste.local")
+        token = self.login("cliente@example.com")
         order = self.create_order(token)
         key = "approved-payment-key"
 
@@ -421,7 +421,7 @@ class OrdersApiTests(unittest.TestCase):
         self.assertEqual(different_key.json()["error"], "PAYMENT_NOT_ALLOWED")
 
     def test_declined_and_failed_gateway_attempts_are_persisted(self) -> None:
-        token = self.login("cliente@teste.local")
+        token = self.login("cliente@example.com")
         declined_order = self.create_order(token)
         with patch(
             "src.api.orders.mock_payment_gateway.charge",
@@ -477,7 +477,7 @@ class OrdersApiTests(unittest.TestCase):
             self.assertTrue(all(payment.payload["gateway"] for payment in payments))
 
     def test_stock_race_rolls_back_all_decrements_and_keeps_order_pending(self) -> None:
-        token = self.login("cliente@teste.local")
+        token = self.login("cliente@example.com")
         request = self.request_body()
         request["itens"] = [
             {"produtoId": self.database_id(ProdutoModel, sku="TESTE-001"), "quantidade": 1},
@@ -530,7 +530,7 @@ class OrdersApiTests(unittest.TestCase):
         self.assertEqual(replay.json()["error"], "ESTOQUE_INSUFICIENTE")
 
     def test_payment_requires_valid_form_and_idempotency_key(self) -> None:
-        token = self.login("cliente@teste.local")
+        token = self.login("cliente@example.com")
         order = self.create_order(token)
         invalid_form = self.client.post(
             f"/pedidos/{order['id']}/pagamento",
@@ -551,7 +551,7 @@ class OrdersApiTests(unittest.TestCase):
         self.assertEqual(missing_key.json()["error"], "VALIDATION_ERROR")
 
     def test_customer_cannot_pay_another_customers_order(self) -> None:
-        owner_token = self.login("cliente@teste.local")
+        owner_token = self.login("cliente@example.com")
         order = self.create_order(owner_token)
         registration = self.client.post(
             "/auth/cadastro",
@@ -577,7 +577,7 @@ class OrdersApiTests(unittest.TestCase):
         charge.assert_not_called()
 
     def test_approved_payment_rolls_back_if_audit_fails(self) -> None:
-        token = self.login("cliente@teste.local")
+        token = self.login("cliente@example.com")
         order = self.create_order(token)
         calls = 0
 
@@ -621,7 +621,7 @@ class OrdersApiTests(unittest.TestCase):
             self.assertEqual(payment.status, "ERRO_PROCESSAMENTO")
 
     def test_status_changes_enforce_transition_profiles_and_audit(self) -> None:
-        client_token = self.login("cliente@teste.local")
+        client_token = self.login("cliente@example.com")
         cancelled_order = self.create_order(client_token)
         invalid_status = self.set_order_status(
             client_token, cancelled_order["id"], "EM_PREPARO"
@@ -653,7 +653,7 @@ class OrdersApiTests(unittest.TestCase):
             client_token, paid_order["id"], "PIX", "status-transition-key"
         )
         self.assertEqual(paid.status_code, 200, paid.text)
-        attendant_token = self.login("atendente@teste.local")
+        attendant_token = self.login("atendente@example.com")
         wrong_profile = self.set_order_status(
             attendant_token, paid_order["id"], "PRONTO"
         )
@@ -663,7 +663,7 @@ class OrdersApiTests(unittest.TestCase):
             {"origem": "EM_PREPARO", "destino": "PRONTO"},
         )
 
-        kitchen_token = self.login("cozinha@teste.local")
+        kitchen_token = self.login("cozinha@example.com")
         ready = self.set_order_status(
             kitchen_token, paid_order["id"], "PRONTO"
         )
@@ -708,9 +708,9 @@ class OrdersApiTests(unittest.TestCase):
             )
 
     def test_audit_endpoint_is_manager_only_and_filters_orders(self) -> None:
-        client_token = self.login("cliente@teste.local")
+        client_token = self.login("cliente@example.com")
         order = self.create_order(client_token)
-        manager_token = self.login("gerente@teste.local")
+        manager_token = self.login("gerente@example.com")
 
         audit_response = self.client.get(
             f"/auditoria?entidade=PEDIDO&entidade_id={order['id']}",

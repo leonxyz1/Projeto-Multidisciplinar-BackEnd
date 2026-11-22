@@ -92,7 +92,7 @@ class DatabaseSeedTests(unittest.TestCase):
         )
 
         client = self.session.scalar(
-            select(UsuarioModel).where(UsuarioModel.email == "cliente@teste.local")
+            select(UsuarioModel).where(UsuarioModel.email == "cliente@example.com")
         )
         self.assertIsNone(client.unidade_id)
         self.assertTrue(bcrypt.checkpw(b"senha123", client.senha_hash.encode()))
@@ -120,8 +120,8 @@ class DatabaseSeedTests(unittest.TestCase):
         self.session.add(order)
         self.session.flush()
 
-        self.assertEqual(order.cliente.email, "cliente@teste.local")
-        self.assertEqual(order.criado_por.email, "atendente@teste.local")
+        self.assertEqual(order.cliente.email, "cliente@example.com")
+        self.assertEqual(order.criado_por.email, "atendente@example.com")
 
 
 if __name__ == "__main__":

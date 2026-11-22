@@ -49,7 +49,7 @@ def seed_data(session: Session) -> None:
     cliente = _get_or_create(
         session,
         UsuarioModel,
-        {"email": "cliente@teste.local"},
+        {"email": "cliente@example.com"},
         {
             "nome": "Cliente Teste",
             "unidade_id": None,
@@ -60,7 +60,7 @@ def seed_data(session: Session) -> None:
     _get_or_create(
         session,
         UsuarioModel,
-        {"email": "atendente@teste.local"},
+        {"email": "atendente@example.com"},
         {
             "nome": "Atendente Teste",
             "unidade_id": centro.id,
@@ -71,7 +71,7 @@ def seed_data(session: Session) -> None:
     _get_or_create(
         session,
         UsuarioModel,
-        {"email": "gerente@teste.local"},
+        {"email": "gerente@example.com"},
         {
             "nome": "Gerente Teste",
             "unidade_id": centro.id,
