@@ -9,6 +9,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from src.api.auth import router as auth_router
+from src.api.audit import router as audit_router
 from src.api.errors import (
     BusinessError,
     business_error_handler,
@@ -49,6 +50,7 @@ async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResp
 
 
 app.include_router(auth_router)
+app.include_router(audit_router)
 app.include_router(orders_router)
 app.include_router(stock_router)
 app.include_router(units_router)

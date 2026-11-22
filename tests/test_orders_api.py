@@ -682,6 +682,13 @@ class OrdersApiTests(unittest.TestCase):
         self.assertEqual(invalid_value.json()["error"], "VALIDATION_ERROR")
 
         with Session(self.engine) as session:
+            cancellation_audit = session.scalar(
+                select(AuditoriaModel).where(
+                    AuditoriaModel.entidade_id == cancelled_order["id"],
+                    AuditoriaModel.acao == "PEDIDO_CANCELADO",
+                )
+            )
+            self.assertIsNotNone(cancellation_audit)
             updates = list(
                 session.scalars(
                     select(AuditoriaModel).where(
@@ -699,6 +706,39 @@ class OrdersApiTests(unittest.TestCase):
                 updates[1].detalhes,
                 {"statusAnterior": "PRONTO", "statusNovo": "ENTREGUE"},
             )
+
+    def test_audit_endpoint_is_manager_only_and_filters_orders(self) -> None:
+        client_token = self.login("cliente@teste.local")
+        order = self.create_order(client_token)
+        manager_token = self.login("gerente@teste.local")
+
+        audit_response = self.client.get(
+            f"/auditoria?entidade=PEDIDO&entidade_id={order['id']}",
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
+        self.assertEqual(audit_response.status_code, 200, audit_response.text)
+        body = audit_response.json()
+        self.assertEqual(len(body), 1)
+        self.assertEqual(body[0]["acao"], "PEDIDO_CRIADO")
+        self.assertEqual(body[0]["entidade_id"], order["id"])
+        self.assertEqual(
+            body[0]["detalhes"],
+            {
+                "status": "AGUARDANDO_PAGAMENTO",
+                "quantidadeItens": 1,
+                "total": "39.90",
+            },
+        )
+
+        forbidden = self.client.get(
+            f"/auditoria?entidade=PEDIDO&entidade_id={order['id']}",
+            headers={"Authorization": f"Bearer {client_token}"},
+        )
+        unauthorized = self.client.get("/auditoria")
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(forbidden.json()["error"], "HTTP_403")
+        self.assertEqual(unauthorized.status_code, 401)
+        self.assertEqual(unauthorized.json()["error"], "HTTP_401")
 
 
 if __name__ == "__main__":
