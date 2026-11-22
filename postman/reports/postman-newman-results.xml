@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="Raizes do Nordeste - Plano de Testes da API" tests="16" time="0.825">
+  <testsuite name="Auth / Login - cliente" id="b215d436-5e02-4440-827d-3dcfcf3fce0a" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.379">
+    <testcase name="Status 200" time="0.379" classname="AuthLoginCliente"/>
+    <testcase name="Resposta contém token bearer" time="0.379" classname="AuthLoginCliente"/>
+  </testsuite>
+  <testsuite name="Auth / Login - gerente" id="249a51d6-b0c9-4bdf-b6fa-309301e9b8f9" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.285">
+    <testcase name="Status 200" time="0.285" classname="AuthLoginGerente"/>
+    <testcase name="Resposta informa expiracao do token" time="0.285" classname="AuthLoginGerente"/>
+  </testsuite>
+  <testsuite name="Unidades e Produtos / Listar unidades e guardar ID da Unidade Centro" id="30452268-40b9-4184-a2b7-c43a37300b24" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.007">
+    <testcase name="Status 200" time="0.007" classname="UnidadesEProdutosListarUnidadesEGuardarIdDaUnidadeCentro"/>
+    <testcase name="Resposta lista unidades" time="0.007" classname="UnidadesEProdutosListarUnidadesEGuardarIdDaUnidadeCentro"/>
+  </testsuite>
+  <testsuite name="Unidades e Produtos / Listar produtos e guardar IDs do seed" id="896feca2-4539-4edc-bf17-c2066baab6b3" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.011">
+    <testcase name="Status 200" time="0.011" classname="UnidadesEProdutosListarProdutosEGuardarIDsDoSeed"/>
+    <testcase name="Resposta contém itens e total" time="0.011" classname="UnidadesEProdutosListarProdutosEGuardarIDsDoSeed"/>
+  </testsuite>
+  <testsuite name="Pedidos / Criar pedido - canal APP" id="886b0690-a842-4e62-89e5-41618ac10552" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.033">
+    <testcase name="Status 201" time="0.033" classname="PedidosCriarPedidoCanalApp"/>
+    <testcase name="Pedido criado aguardando pagamento" time="0.033" classname="PedidosCriarPedidoCanalApp"/>
+  </testsuite>
+  <testsuite name="Pedidos / Criar pedido - canal BALCAO para pagamento recusado" id="05e822dd-719f-4b49-a667-102ae41ec410" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.015">
+    <testcase name="Status 201" time="0.015" classname="PedidosCriarPedidoCanalBalcaoParaPagamentoRecusado"/>
+    <testcase name="Pedido BALCAO criado" time="0.015" classname="PedidosCriarPedidoCanalBalcaoParaPagamentoRecusado"/>
+  </testsuite>
+  <testsuite name="Pedidos / Filtrar pedidos pelo canal APP" id="a8a13949-584a-45c2-9fe4-025983b59cd4" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.010">
+    <testcase name="Status 200" time="0.010" classname="PedidosFiltrarPedidosPeloCanalApp"/>
+    <testcase name="Filtro retorna o pedido APP criado" time="0.010" classname="PedidosFiltrarPedidosPeloCanalApp"/>
+  </testsuite>
+  <testsuite name="Pedidos / 404 - pedido inexistente" id="98610b42-c4f4-4164-a7eb-77f45d1d6671" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.006">
+    <testcase name="Status 404" time="0.006" classname="Pedidos404PedidoInexistente"/>
+    <testcase name="Erro identifica pedido inexistente" time="0.006" classname="Pedidos404PedidoInexistente"/>
+  </testsuite>
+  <testsuite name="Pedidos / 409 - pedido excede estoque disponivel" id="cec89593-0562-4b36-b4b3-6ca6dba83b94" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.007">
+    <testcase name="Status 409" time="0.007" classname="Pedidos409PedidoExcedeEstoqueDisponivel"/>
+    <testcase name="Erro informa estoque insuficiente" time="0.007" classname="Pedidos409PedidoExcedeEstoqueDisponivel"/>
+  </testsuite>
+  <testsuite name="Pedidos / 409 - transicao de status invalida para gerente" id="56f805ad-231f-4d11-a95b-9ef1da7428b7" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.007">
+    <testcase name="Status 409" time="0.007" classname="Pedidos409TransicaoDeStatusInvalidaParaGerente"/>
+    <testcase name="Erro identifica transicao invalida" time="0.007" classname="Pedidos409TransicaoDeStatusInvalidaParaGerente"/>
+  </testsuite>
+  <testsuite name="Pedidos / Auditoria - verificar eventos do pedido" id="2adf710d-5ce3-4c68-997e-0d9790cb30a7" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.007">
+    <testcase name="Status 200" time="0.007" classname="PedidosAuditoriaVerificarEventosDoPedido"/>
+    <testcase name="Auditoria registra a criacao do pedido" time="0.007" classname="PedidosAuditoriaVerificarEventosDoPedido"/>
+  </testsuite>
+  <testsuite name="Pagamentos / Pagamento aprovado via PIX" id="8678b9bc-390f-464e-8f6e-4b9786cbfa47" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.021">
+    <testcase name="Status 200" time="0.021" classname="PagamentosPagamentoAprovadoViaPix"/>
+    <testcase name="Pagamento aprovado e pedido em preparo" time="0.021" classname="PagamentosPagamentoAprovadoViaPix"/>
+  </testsuite>
+  <testsuite name="Pagamentos / Pagamento recusado via CARTAO" id="7414efbe-5477-4940-9f40-27766eba3b20" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.012">
+    <testcase name="Status 200" time="0.012" classname="PagamentosPagamentoRecusadoViaCartao"/>
+    <testcase name="Gateway mock recusa o pagamento" time="0.012" classname="PagamentosPagamentoRecusadoViaCartao"/>
+  </testsuite>
+  <testsuite name="Erros / 401 - identidade sem token" id="505f85f4-b141-4673-9522-62b7e14087bd" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.006">
+    <testcase name="Status 401" time="0.006" classname="Erros401IdentidadeSemToken"/>
+    <testcase name="Erro identifica falta de autenticacao" time="0.006" classname="Erros401IdentidadeSemToken"/>
+  </testsuite>
+  <testsuite name="Erros / 403 - cliente sem permissao para consultar estoque" id="cc24708f-95a4-45f9-8236-11b3fd72eddc" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.010">
+    <testcase name="Status 403" time="0.010" classname="Erros403ClienteSemPermissaoParaConsultarEstoque"/>
+    <testcase name="Erro identifica perfil sem permissao" time="0.010" classname="Erros403ClienteSemPermissaoParaConsultarEstoque"/>
+  </testsuite>
+  <testsuite name="Erros / 422 - pedido sem canalPedido" id="bdb0b4c3-4136-48aa-a251-84de5870418a" timestamp="2026-11-22T18:21:06.001Z" tests="2" failures="0" errors="0" time="0.009">
+    <testcase name="Status 422" time="0.009" classname="Erros422PedidoSemCanalPedido"/>
+    <testcase name="Erro identifica validacao" time="0.009" classname="Erros422PedidoSemCanalPedido"/>
+  </testsuite>
+</testsuites>
