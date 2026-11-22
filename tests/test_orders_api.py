@@ -12,13 +12,18 @@ from src.api.dependencies import get_db
 from src.infrastructure.database.connection import Base
 from src.infrastructure.database.models import (
     AuditoriaModel,
+    EstoqueModel,
     ItemPedidoModel,
+    MovimentacaoEstoqueModel,
+    PagamentoModel,
     PedidoModel,
     ProdutoModel,
     UnidadeModel,
     UsuarioModel,
 )
 from src.infrastructure.database.seed import seed_data
+from src.infrastructure.audit import registrar_auditoria
+from src.infrastructure.payment_gateway import mock_payment_gateway
 from src.infrastructure.security import hash_password
 from src.main import app
 
@@ -109,6 +114,18 @@ class OrdersApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
+
+    def pay_order(
+        self, token: str, order_id: int, form: str, key: str
+    ):
+        return self.client.post(
+            f"/pedidos/{order_id}/pagamento",
+            json={"formaPagamento": form},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": key,
+            },
+        )
 
     def test_client_creates_order_using_database_price_and_auditing(self) -> None:
         token = self.login("cliente@teste.local")
@@ -355,6 +372,246 @@ class OrdersApiTests(unittest.TestCase):
         )
         self.assertEqual(hidden_order.status_code, 404)
         self.assertEqual(visible_order.status_code, 200, visible_order.text)
+
+    def test_approved_payment_is_idempotent_and_decrements_stock_once(self) -> None:
+        token = self.login("cliente@teste.local")
+        order = self.create_order(token)
+        key = "approved-payment-key"
+
+        with patch(
+            "src.api.orders.mock_payment_gateway.charge",
+            wraps=mock_payment_gateway.charge,
+        ) as charge:
+            first = self.pay_order(token, order["id"], "PIX", key)
+            replay = self.pay_order(token, order["id"], "CARTAO", key)
+
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(replay.status_code, 200, replay.text)
+        self.assertEqual(charge.call_count, 1)
+        self.assertEqual(first.json(), replay.json())
+        self.assertEqual(first.json()["statusTransacao"], "APROVADO")
+        self.assertEqual(first.json()["pedidoStatus"], "EM_PREPARO")
+
+        product_id = self.database_id(ProdutoModel, sku="TESTE-001")
+        unit_id = self.database_id(UnidadeModel, nome="Unidade Centro")
+        with Session(self.engine) as session:
+            self.assertEqual(
+                session.get(EstoqueModel, (unit_id, product_id)).quantidade, 49
+            )
+            self.assertEqual(
+                session.scalar(select(func.count()).select_from(PagamentoModel)),
+                1,
+            )
+            movement = session.scalar(select(MovimentacaoEstoqueModel))
+            self.assertEqual(movement.tipo, "SAIDA")
+            self.assertEqual(movement.quantidade, 1)
+            self.assertEqual(
+                session.get(PedidoModel, order["id"]).status, "EM_PREPARO"
+            )
+
+        different_key = self.pay_order(token, order["id"], "PIX", "new-key")
+        self.assertEqual(different_key.status_code, 409)
+        self.assertEqual(different_key.json()["error"], "PAYMENT_NOT_ALLOWED")
+
+    def test_declined_and_failed_gateway_attempts_are_persisted(self) -> None:
+        token = self.login("cliente@teste.local")
+        declined_order = self.create_order(token)
+        with patch(
+            "src.api.orders.mock_payment_gateway.charge",
+            wraps=mock_payment_gateway.charge,
+        ) as charge:
+            declined = self.pay_order(
+                token, declined_order["id"], "CARTAO", "declined-key"
+            )
+            declined_replay = self.pay_order(
+                token, declined_order["id"], "PIX", "declined-key"
+            )
+        self.assertEqual(declined.status_code, 200, declined.text)
+        self.assertEqual(declined.json()["statusTransacao"], "RECUSADO")
+        self.assertEqual(declined_replay.json(), declined.json())
+        self.assertEqual(charge.call_count, 1)
+
+        failing_order = self.create_order(token)
+        with patch(
+            "src.api.orders.mock_payment_gateway.charge",
+            wraps=mock_payment_gateway.charge,
+        ) as charge:
+            failure = self.pay_order(
+                token, failing_order["id"], "FALHA_GATEWAY", "failure-key"
+            )
+            failure_replay = self.pay_order(
+                token, failing_order["id"], "PIX", "failure-key"
+            )
+        self.assertEqual(failure.status_code, 502)
+        self.assertEqual(failure.json()["error"], "PAYMENT_GATEWAY_ERROR")
+        self.assertEqual(failure_replay.status_code, 502)
+        self.assertEqual(failure_replay.json()["error"], "PAYMENT_GATEWAY_ERROR")
+        self.assertEqual(charge.call_count, 1)
+
+        with Session(self.engine) as session:
+            self.assertEqual(
+                session.scalar(
+                    select(PedidoModel.status).where(
+                        PedidoModel.id == declined_order["id"]
+                    )
+                ),
+                "AGUARDANDO_PAGAMENTO",
+            )
+            self.assertEqual(
+                session.scalar(
+                    select(PedidoModel.status).where(
+                        PedidoModel.id == failing_order["id"]
+                    )
+                ),
+                "AGUARDANDO_PAGAMENTO",
+            )
+            payments = list(session.scalars(select(PagamentoModel)))
+            self.assertEqual(len(payments), 2)
+            self.assertTrue(all(payment.payload["gateway"] for payment in payments))
+
+    def test_stock_race_rolls_back_all_decrements_and_keeps_order_pending(self) -> None:
+        token = self.login("cliente@teste.local")
+        request = self.request_body()
+        request["itens"] = [
+            {"produtoId": self.database_id(ProdutoModel, sku="TESTE-001"), "quantidade": 1},
+            {"produtoId": self.database_id(ProdutoModel, sku="TESTE-002"), "quantidade": 1},
+        ]
+        created = self.client.post(
+            "/pedidos",
+            json=request,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        product_one_id = self.database_id(ProdutoModel, sku="TESTE-001")
+        product_two_id = self.database_id(ProdutoModel, sku="TESTE-002")
+        unit_id = self.database_id(UnidadeModel, nome="Unidade Centro")
+        with Session(self.engine) as session:
+            session.get(EstoqueModel, (unit_id, product_two_id)).quantidade = 0
+            session.commit()
+
+        response = self.pay_order(
+            token, created.json()["id"], "PIX", "stock-race-key"
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "ESTOQUE_INSUFICIENTE")
+        self.assertEqual(
+            response.json()["details"]["produtoId"], product_two_id
+        )
+
+        with Session(self.engine) as session:
+            self.assertEqual(
+                session.get(EstoqueModel, (unit_id, product_one_id)).quantidade,
+                50,
+            )
+            self.assertEqual(
+                session.get(PedidoModel, created.json()["id"]).status,
+                "AGUARDANDO_PAGAMENTO",
+            )
+            self.assertEqual(
+                session.scalar(
+                    select(func.count()).select_from(MovimentacaoEstoqueModel)
+                ),
+                0,
+            )
+            payment = session.scalar(select(PagamentoModel))
+            self.assertEqual(payment.status, "ERRO_ESTOQUE")
+
+        replay = self.pay_order(
+            token, created.json()["id"], "PIX", "stock-race-key"
+        )
+        self.assertEqual(replay.status_code, 409)
+        self.assertEqual(replay.json()["error"], "ESTOQUE_INSUFICIENTE")
+
+    def test_payment_requires_valid_form_and_idempotency_key(self) -> None:
+        token = self.login("cliente@teste.local")
+        order = self.create_order(token)
+        invalid_form = self.client.post(
+            f"/pedidos/{order['id']}/pagamento",
+            json={"formaPagamento": "INVALIDO"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Idempotency-Key": "invalid-form-key",
+            },
+        )
+        missing_key = self.client.post(
+            f"/pedidos/{order['id']}/pagamento",
+            json={"formaPagamento": "PIX"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(invalid_form.status_code, 422)
+        self.assertEqual(invalid_form.json()["error"], "VALIDATION_ERROR")
+        self.assertEqual(missing_key.status_code, 422)
+        self.assertEqual(missing_key.json()["error"], "VALIDATION_ERROR")
+
+    def test_customer_cannot_pay_another_customers_order(self) -> None:
+        owner_token = self.login("cliente@teste.local")
+        order = self.create_order(owner_token)
+        registration = self.client.post(
+            "/auth/cadastro",
+            json={
+                "nome": "Outro Cliente",
+                "email": "pagador@example.com",
+                "senha": "senha123",
+            },
+        )
+        self.assertEqual(registration.status_code, 201, registration.text)
+        other_token = self.login("pagador@example.com")
+
+        with patch(
+            "src.api.orders.mock_payment_gateway.charge",
+            wraps=mock_payment_gateway.charge,
+        ) as charge:
+            response = self.pay_order(
+                other_token, order["id"], "PIX", "foreign-order-key"
+            )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["error"], "ORDER_NOT_FOUND")
+        charge.assert_not_called()
+
+    def test_approved_payment_rolls_back_if_audit_fails(self) -> None:
+        token = self.login("cliente@teste.local")
+        order = self.create_order(token)
+        calls = 0
+
+        def fail_first_audit(*args: object, **kwargs: object) -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("audit failure")
+            registrar_auditoria(*args, **kwargs)
+
+        with patch(
+            "src.api.orders.registrar_auditoria",
+            side_effect=fail_first_audit,
+        ):
+            response = self.pay_order(
+                token, order["id"], "PIX", "audit-failure-key"
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["error"], "PAYMENT_PROCESSING_ERROR")
+        with Session(self.engine) as session:
+            self.assertEqual(
+                session.get(PedidoModel, order["id"]).status,
+                "AGUARDANDO_PAGAMENTO",
+            )
+            stock = session.get(
+                EstoqueModel,
+                (
+                    self.database_id(UnidadeModel, nome="Unidade Centro"),
+                    self.database_id(ProdutoModel, sku="TESTE-001"),
+                ),
+            )
+            self.assertEqual(stock.quantidade, 50)
+            self.assertEqual(
+                session.scalar(
+                    select(func.count()).select_from(MovimentacaoEstoqueModel)
+                ),
+                0,
+            )
+            payment = session.scalar(select(PagamentoModel))
+            self.assertEqual(payment.status, "ERRO_PROCESSAMENTO")
 
 
 if __name__ == "__main__":
