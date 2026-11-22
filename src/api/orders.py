@@ -807,7 +807,11 @@ def update_order_status(
             session,
             usuario_id=current_user.id,
             unidade_id=order.unidade_id,
-            acao="STATUS_PEDIDO_ATUALIZADO",
+            acao=(
+                "PEDIDO_CANCELADO"
+                if next_status == StatusPedido.CANCELADO.value
+                else "STATUS_PEDIDO_ATUALIZADO"
+            ),
             entidade="PEDIDO",
             entidade_id=order.id,
             detalhes={
