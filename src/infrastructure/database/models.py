@@ -1,7 +1,16 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .connection import Base
@@ -64,6 +73,27 @@ class EstoqueModel(Base):
 
     unidade: Mapped[UnidadeModel] = relationship()
     produto: Mapped[ProdutoModel] = relationship()
+
+
+class MovimentacaoEstoqueModel(Base):
+    __tablename__ = "movimentacoes_estoque"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pedido_id: Mapped[int] = mapped_column(ForeignKey("pedidos.id"), nullable=False)
+    unidade_id: Mapped[int] = mapped_column(
+        ForeignKey("unidades.id"), nullable=False
+    )
+    produto_id: Mapped[int] = mapped_column(
+        ForeignKey("produtos.id"), nullable=False
+    )
+    usuario_id: Mapped[int] = mapped_column(
+        ForeignKey("usuarios.id"), nullable=False
+    )
+    tipo: Mapped[str] = mapped_column(String(20), nullable=False)
+    quantidade: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
 
 
 class FidelidadeModel(Base):
@@ -134,8 +164,30 @@ class PagamentoModel(Base):
     metodo: Mapped[str] = mapped_column(String(30), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False)
     valor: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    payload: Mapped[dict[str, object]] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
 
     pedido: Mapped[PedidoModel] = relationship()
+
+
+class AuditoriaModel(Base):
+    __tablename__ = "auditorias"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    usuario_id: Mapped[int] = mapped_column(
+        ForeignKey("usuarios.id"), nullable=False
+    )
+    unidade_id: Mapped[int] = mapped_column(
+        ForeignKey("unidades.id"), nullable=False
+    )
+    acao: Mapped[str] = mapped_column(String(60), nullable=False)
+    entidade: Mapped[str] = mapped_column(String(60), nullable=False)
+    entidade_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    detalhes: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )

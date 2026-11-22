@@ -49,7 +49,7 @@ def seed_data(session: Session) -> None:
     cliente = _get_or_create(
         session,
         UsuarioModel,
-        {"email": "cliente@teste.local"},
+        {"email": "cliente@example.com"},
         {
             "nome": "Cliente Teste",
             "unidade_id": None,
@@ -60,7 +60,7 @@ def seed_data(session: Session) -> None:
     _get_or_create(
         session,
         UsuarioModel,
-        {"email": "atendente@teste.local"},
+        {"email": "atendente@example.com"},
         {
             "nome": "Atendente Teste",
             "unidade_id": centro.id,
@@ -71,7 +71,7 @@ def seed_data(session: Session) -> None:
     _get_or_create(
         session,
         UsuarioModel,
-        {"email": "gerente@teste.local"},
+        {"email": "gerente@example.com"},
         {
             "nome": "Gerente Teste",
             "unidade_id": centro.id,
@@ -117,34 +117,29 @@ def seed_data(session: Session) -> None:
             "ativo": True,
         },
     )
-    estoque_inicial = (50, 2, 0)
-    for dados, quantidade in zip(produtos, estoque_inicial, strict=True):
+    estoque_por_unidade = (
+        (centro, (50, 2, 0)),
+        (shopping, (25, 5, 8)),
+    )
+    for indice, dados in enumerate(produtos):
         produto = _get_or_create(
             session,
             ProdutoModel,
             {"sku": dados["sku"]},
             {key: value for key, value in dados.items() if key != "sku"},
         )
-        estoque = session.get(EstoqueModel, (centro.id, produto.id))
-        if estoque is None:
-            session.add(
-                EstoqueModel(
-                    unidade_id=centro.id,
-                    produto_id=produto.id,
-                    quantidade=quantidade,
-                    disponivel=quantidade > 0,
+        for unidade, quantidades in estoque_por_unidade:
+            quantidade = quantidades[indice]
+            estoque = session.get(EstoqueModel, (unidade.id, produto.id))
+            if estoque is None:
+                session.add(
+                    EstoqueModel(
+                        unidade_id=unidade.id,
+                        produto_id=produto.id,
+                        quantidade=quantidade,
+                        disponivel=quantidade > 0,
+                    )
                 )
-            )
-        shopping_estoque = session.get(EstoqueModel, (shopping.id, produto.id))
-        if shopping_estoque is None:
-            session.add(
-                EstoqueModel(
-                    unidade_id=shopping.id,
-                    produto_id=produto.id,
-                    quantidade=quantidade,
-                    disponivel=quantidade > 0,
-                )
-            )
 
 
 def main() -> None:
