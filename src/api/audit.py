@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import exigir_perfis, get_db
+from src.api.errors import error_responses
 from src.infrastructure.database.models import AuditoriaModel
 
 
@@ -30,6 +31,7 @@ class AuditResponse(BaseModel):
     "",
     response_model=list[AuditResponse],
     dependencies=[Depends(exigir_perfis("GERENTE"))],
+    responses=error_responses(401, 403, 422, 500),
 )
 def list_audit(
     session: Annotated[Session, Depends(get_db)],

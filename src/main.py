@@ -8,12 +8,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from src.api.auth import router as auth_router
 from src.api.audit import router as audit_router
+from src.api.auth import router as auth_router
 from src.api.errors import (
     BusinessError,
     business_error_handler,
     error_response,
+    error_responses,
     http_exception_handler,
     validation_error_handler,
 )
@@ -32,7 +33,23 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
 
-app = FastAPI(title="Raízes do Nordeste API", lifespan=lifespan)
+app = FastAPI(
+    title="Raízes do Nordeste API",
+    description=(
+        "API para autenticação, consulta de cardápios e estoques por unidade, "
+        "criação e acompanhamento de pedidos, pagamentos mock e auditoria."
+    ),
+    version="1.0.0",
+    openapi_tags=[
+        {"name": "Autenticação", "description": "Cadastro, login e identidade."},
+        {"name": "Pedidos", "description": "Criação, pagamento e status de pedidos."},
+        {"name": "Estoque", "description": "Consulta de estoque."},
+        {"name": "Unidades", "description": "Unidades e cardápios por unidade."},
+        {"name": "Auditoria", "description": "Eventos sensíveis, visíveis a gerentes."},
+        {"name": "Saúde", "description": "Verificação de disponibilidade da API."},
+    ],
+    lifespan=lifespan,
+)
 app.add_exception_handler(BusinessError, business_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
@@ -56,6 +73,6 @@ app.include_router(stock_router)
 app.include_router(units_router)
 
 
-@app.get("/saude")
+@app.get("/saude", tags=["Saúde"], responses=error_responses(500))
 async def health_check() -> dict[str, str]:
     return {"status": "ok"}

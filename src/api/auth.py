@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import get_current_user, get_db
-from src.api.errors import BusinessError
+from src.api.errors import BusinessError, error_responses
 from src.infrastructure.database.models import UsuarioModel
 from src.infrastructure.security import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -53,6 +53,7 @@ class TokenResponse(BaseModel):
     "/cadastro",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
+    responses=error_responses(409, 422, 500),
 )
 def register(
     payload: RegisterRequest,
@@ -103,7 +104,11 @@ def register(
     return user
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    responses=error_responses(401, 422, 500),
+)
 def login(
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     session: Annotated[Session, Depends(get_db)],
@@ -123,7 +128,11 @@ def login(
     )
 
 
-@router.get("/me", response_model=UserResponse)
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    responses=error_responses(401, 500),
+)
 def current_user(
     user: Annotated[UsuarioModel, Depends(get_current_user)],
 ) -> UsuarioModel:

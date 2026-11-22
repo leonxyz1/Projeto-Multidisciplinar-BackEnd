@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import exigir_perfis, get_db
-from src.api.errors import BusinessError
+from src.api.errors import BusinessError, error_responses
 from src.api.stock import StockResponse
 from src.infrastructure.database.models import (
     EstoqueModel,
@@ -66,7 +66,11 @@ def _ensure_active_unit(session: Session, unit_id: int) -> None:
         )
 
 
-@router.get("", response_model=list[UnitResponse])
+@router.get(
+    "",
+    response_model=list[UnitResponse],
+    responses=error_responses(500),
+)
 def list_active_units(
     session: Annotated[Session, Depends(get_db)],
 ) -> list[UnidadeModel]:
@@ -79,7 +83,11 @@ def list_active_units(
     )
 
 
-@router.get("/{unit_id}/produtos", response_model=PaginatedProductsResponse)
+@router.get(
+    "/{unit_id}/produtos",
+    response_model=PaginatedProductsResponse,
+    responses=error_responses(404, 422, 500),
+)
 def list_unit_products(
     unit_id: int,
     session: Annotated[Session, Depends(get_db)],
@@ -127,6 +135,7 @@ def list_unit_products(
     "/{unit_id}/estoque",
     response_model=list[StockResponse],
     dependencies=[Depends(exigir_perfis("ATENDENTE", "GERENTE"))],
+    responses=error_responses(401, 403, 404, 500),
 )
 def list_unit_stock(
     unit_id: int,
