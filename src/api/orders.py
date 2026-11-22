@@ -8,7 +8,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import exigir_perfis, get_db
-from src.api.errors import BusinessError
+from src.api.errors import BusinessError, error_responses
 from src.domain.orders import (
     OrderChannel as CanalPedido,
     OrderStatus as StatusPedido,
@@ -274,6 +274,7 @@ def _existing_payment_result(payment: PagamentoModel) -> PagamentoResponse:
     "",
     response_model=PedidoResponse,
     status_code=status.HTTP_201_CREATED,
+    responses=error_responses(401, 403, 404, 409, 422, 500),
 )
 def create_order(
     payload: PedidoCreateInput,
@@ -417,7 +418,11 @@ def create_order(
     return _serialize_order(session, order)
 
 
-@router.get("", response_model=PaginatedPedidosResponse)
+@router.get(
+    "",
+    response_model=PaginatedPedidosResponse,
+    responses=error_responses(401, 403, 422, 500),
+)
 def list_orders(
     session: Annotated[Session, Depends(get_db)],
     current_user: Annotated[
@@ -471,7 +476,11 @@ def list_orders(
     )
 
 
-@router.get("/{order_id}", response_model=PedidoResponse)
+@router.get(
+    "/{order_id}",
+    response_model=PedidoResponse,
+    responses=error_responses(401, 403, 404, 500),
+)
 def get_order(
     order_id: int,
     session: Annotated[Session, Depends(get_db)],
@@ -506,7 +515,11 @@ def get_order(
     return _serialize_order(session, order)
 
 
-@router.post("/{order_id}/pagamento", response_model=PagamentoResponse)
+@router.post(
+    "/{order_id}/pagamento",
+    response_model=PagamentoResponse,
+    responses=error_responses(401, 403, 404, 409, 422, 500, 502, 503),
+)
 def pay_order(
     order_id: int,
     payload: PagamentoInput,
@@ -760,7 +773,11 @@ def pay_order(
     return _serialize_payment(payment)
 
 
-@router.patch("/{order_id}/status", response_model=PedidoResponse)
+@router.patch(
+    "/{order_id}/status",
+    response_model=PedidoResponse,
+    responses=error_responses(401, 403, 404, 409, 422, 500),
+)
 def update_order_status(
     order_id: int,
     payload: AtualizacaoStatusInput,

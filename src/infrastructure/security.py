@@ -6,7 +6,24 @@ from jose import jwt
 
 
 JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+
+def _get_access_token_expire_minutes() -> int:
+    value = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+    try:
+        minutes = int(value)
+    except ValueError as exc:
+        raise RuntimeError(
+            "ACCESS_TOKEN_EXPIRE_MINUTES must be a positive integer"
+        ) from exc
+    if minutes <= 0:
+        raise RuntimeError(
+            "ACCESS_TOKEN_EXPIRE_MINUTES must be a positive integer"
+        )
+    return minutes
+
+
+ACCESS_TOKEN_EXPIRE_MINUTES = _get_access_token_expire_minutes()
 
 
 def get_jwt_secret() -> str:

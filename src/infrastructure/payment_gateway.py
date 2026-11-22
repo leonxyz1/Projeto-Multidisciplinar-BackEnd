@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -14,7 +15,16 @@ class GatewayResult:
 
 
 class MockPaymentGateway:
+    def __init__(self) -> None:
+        self.mode = os.getenv("PAYMENT_MOCK_MODE", "deterministic").strip().lower()
+        if self.mode not in {"deterministic", "disabled"}:
+            raise RuntimeError(
+                "PAYMENT_MOCK_MODE must be 'deterministic' or 'disabled'"
+            )
+
     def charge(self, amount: Decimal, payment_form: str) -> GatewayResult:
+        if self.mode == "disabled":
+            raise GatewayUnavailableError("Gateway mock desabilitado")
         if payment_form == "FALHA_GATEWAY":
             raise GatewayUnavailableError("Gateway mock indisponível")
 
