@@ -8,6 +8,7 @@ implementada com FastAPI, SQLAlchemy, Alembic e SQLite.
 - Python 3.10 ou superior
 - Git
 - OpenSSL para gerar um segredo JWT local (ou outro gerador seguro)
+- Node.js e npm (opcionais, para executar a coleção com Newman)
 
 ## Instalar e iniciar do zero
 
@@ -61,9 +62,16 @@ O login `POST /auth/login` recebe formulário com `username` (o e-mail) e
 `password`. No Swagger, use o token retornado como Bearer token para testar as
 rotas protegidas. O cadastro público cria usuários com perfil `CLIENTE`.
 
+## Modelagem do banco
+
+O DER e o diagrama de classes refletem as migrations Alembic e as classes
+SQLAlchemy. A fonte Mermaid dos diagramas está em
+[docs/modelagem.md](docs/modelagem.md); ela pode ser usada para visualizar ou
+exportar os diagramas para o relatório.
+
 ## Testes
 
-Com as dependências instaladas, execute:
+Com as dependências instaladas, execute os testes automatizados do código:
 
 ```bash
 python -m unittest discover -s tests -v
@@ -73,11 +81,20 @@ python -m unittest discover -s tests -v
 
 Importe [postman/Raizes-do-Nordeste.postman_collection.json](postman/Raizes-do-Nordeste.postman_collection.json)
 no Postman. A variável `baseUrl` já aponta para `http://127.0.0.1:8000`; ajuste-a
-se a API estiver em outro endereço. A coleção contém 16 requisições com testes
+se a API estiver em outro endereço. A coleção contém 19 requisições com testes
 de status e corpo, organizadas em Auth, Unidades e Produtos, Pedidos,
 Pagamentos e Erros. Execute a coleção inteira no Collection Runner, sem
 reordenar nem desmarcar requisições. Os scripts guardam os tokens e IDs
 necessários durante a execução.
+
+Com a API em execução e Node.js/npm disponíveis, a coleção também pode ser
+executada pela linha de comando com Newman:
+
+```bash
+npx --yes newman@6.2.3 run postman/Raizes-do-Nordeste.postman_collection.json --reporters cli
+```
+
+O resultado esperado é de 19 requisições sem falhas.
 
 Para repetir a execução com um banco limpo, pare a API e use um arquivo SQLite
 dedicado à coleção:

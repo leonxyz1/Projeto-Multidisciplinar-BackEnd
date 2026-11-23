@@ -50,7 +50,8 @@
                 ]
               }
             }
-          ]
+          ],
+          "description": "Autentica o usuario CLIENTE de demonstracao. Salva o token em clienteToken, usado pelas requisicoes de pedidos e erros."
         },
         {
           "name": "Login - gerente",
@@ -93,7 +94,8 @@
                 ]
               }
             }
-          ]
+          ],
+          "description": "Autentica o usuario GERENTE de demonstracao. Salva o token em gerenteToken, usado na consulta de auditoria e na transicao de status."
         }
       ]
     },
@@ -122,6 +124,28 @@
                 ]
               }
             }
+          ],
+          "description": "Lista unidades ativas e salva o ID da Unidade Centro em unidadeCentroId para as requisicoes seguintes. Requer o seed do banco.",
+          "response": [
+            {
+              "name": "Exemplo 200",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/unidades"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "[\n  {\n    \"id\": 1,\n    \"nome\": \"Unidade Centro\",\n    \"endereco\": \"Endereco de teste 1\",\n    \"ativa\": true\n  },\n  {\n    \"id\": 2,\n    \"nome\": \"Unidade Shopping\",\n    \"endereco\": \"Endereco de teste 2\",\n    \"ativa\": true\n  }\n]"
+            }
           ]
         },
         {
@@ -148,6 +172,28 @@
                   "pm.collectionVariables.set('produtoSemEstoqueId', String(unavailable.id));"
                 ]
               }
+            }
+          ],
+          "description": "Lista produtos e estoque da unidade selecionada. Salva em variaveis os IDs do produto disponivel e do produto sem estoque.",
+          "response": [
+            {
+              "name": "Exemplo 200",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/unidades/{{unidadeCentroId}}/produtos"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"items\": [\n    {\n      \"id\": 1,\n      \"sku\": \"TESTE-001\",\n      \"nome\": \"Hambúrguer Clássico\",\n      \"descricao\": \"Hambúrguer de teste\",\n      \"preco\": \"39.90\",\n      \"sazonal\": false,\n      \"quantidade\": 50,\n      \"disponivel\": true\n    },\n    {\n      \"id\": 2,\n      \"sku\": \"TESTE-002\",\n      \"nome\": \"Combo Família\",\n      \"descricao\": \"Combo de teste\",\n      \"preco\": \"59.90\",\n      \"sazonal\": true,\n      \"quantidade\": 2,\n      \"disponivel\": true\n    },\n    {\n      \"id\": 3,\n      \"sku\": \"TESTE-003\",\n      \"nome\": \"Sobremesa do Dia\",\n      \"descricao\": \"Sobremesa de teste\",\n      \"preco\": \"12.50\",\n      \"sazonal\": false,\n      \"quantidade\": 0,\n      \"disponivel\": false\n    }\n  ],\n  \"meta\": {\n    \"page\": 1,\n    \"limit\": 10,\n    \"total\": 3\n  }\n}"
             }
           ]
         }
@@ -201,7 +247,55 @@
                 ]
               }
             }
-          ]
+          ],
+          "description": "Cria um pedido pelo canal APP e salva seu ID em pedidoId para os testes de pagamento, status e auditoria. Espera HTTP 201."
+        },
+        {
+          "name": "Criar pedido - canal TOTEM",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"canalPedido\": \"TOTEM\",\n  \"unidadeId\": {{unidadeCentroId}},\n  \"itens\": [\n    { \"produtoId\": {{produtoDisponivelId}}, \"quantidade\": 1 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/pedidos"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('Pedido TOTEM criado', function () { pm.expect(body.canalPedido).to.eql('TOTEM'); });",
+                  "pm.expect(body.id).to.be.a('number');"
+                ]
+              }
+            }
+          ],
+          "description": "Cria um pedido pelo canal TOTEM e confirma o canal na resposta. Nao altera pedidoId, usado pelas requisicoes posteriores."
         },
         {
           "name": "Criar pedido - canal BALCAO para pagamento recusado",
@@ -248,7 +342,8 @@
                 ]
               }
             }
-          ]
+          ],
+          "description": "Cria outro pedido pelo canal BALCAO e salva seu ID em pedidoRecusadoId para testar pagamento recusado. Espera HTTP 201."
         },
         {
           "name": "Filtrar pedidos pelo canal APP",
@@ -278,6 +373,38 @@
                   "pm.test('Filtro retorna o pedido APP criado', function () { pm.expect(body.items).to.be.an('array').that.is.not.empty; pm.expect(body.items.some((item) => String(item.id) === pm.collectionVariables.get('pedidoId') && item.canalPedido === 'APP')).to.eql(true); });"
                 ]
               }
+            }
+          ],
+          "description": "Consulta pedidos do canal APP e verifica se o pedido criado anteriormente esta na lista. Requer clienteToken e pedidoId.",
+          "response": [
+            {
+              "name": "Exemplo 200",
+              "originalRequest": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{clienteToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/pedidos?canalPedido=APP"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"items\": [\n    {\n      \"id\": 1,\n      \"clienteId\": 1,\n      \"criadoPorId\": 1,\n      \"unidadeId\": 1,\n      \"canalPedido\": \"APP\",\n      \"status\": \"AGUARDANDO_PAGAMENTO\",\n      \"valorBruto\": \"39.90\",\n      \"valorDesconto\": \"0.00\",\n      \"total\": \"39.90\",\n      \"criadoEm\": \"2026-01-01T00:00:00\",\n      \"itens\": [\n        {\n          \"produtoId\": 1,\n          \"nomeProduto\": \"Hambúrguer Clássico\",\n          \"quantidade\": 1,\n          \"precoUnitario\": \"39.90\",\n          \"subtotal\": \"39.90\"\n        }\n      ]\n    }\n  ],\n  \"meta\": {\n    \"page\": 1,\n    \"limit\": 10,\n    \"total\": 1\n  }\n}"
             }
           ]
         },
@@ -309,6 +436,38 @@
                   "pm.test('Erro identifica pedido inexistente', function () { pm.expect(body.error).to.eql('ORDER_NOT_FOUND'); });"
                 ]
               }
+            }
+          ],
+          "description": "Consulta um ID que nao existe para verificar a resposta HTTP 404 com o erro ORDER_NOT_FOUND. Requer clienteToken.",
+          "response": [
+            {
+              "name": "Exemplo 404",
+              "originalRequest": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{clienteToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/pedidos/999999999"
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"error\": \"ORDER_NOT_FOUND\",\n  \"message\": \"Pedido não encontrado\",\n  \"details\": {\n    \"pedidoId\": 999999999\n  },\n  \"timestamp\": \"2026-01-01T00:00:00+00:00\",\n  \"path\": \"/pedidos/999999999\"\n}"
             }
           ]
         },
@@ -355,7 +514,8 @@
                 ]
               }
             }
-          ]
+          ],
+          "description": "Tenta criar pedido com produto sem estoque para verificar HTTP 409 e ESTOQUE_INSUFICIENTE. Requer clienteToken e IDs obtidos pelo seed."
         },
         {
           "name": "409 - transicao de status invalida para gerente",
@@ -400,7 +560,8 @@
                 ]
               }
             }
-          ]
+          ],
+          "description": "Tenta uma transicao de status nao permitida e verifica HTTP 409 com INVALID_STATUS_TRANSITION. Requer gerenteToken e pedidoId."
         },
         {
           "name": "Auditoria - verificar eventos do pedido",
@@ -430,6 +591,38 @@
                   "pm.test('Auditoria registra a criacao do pedido', function () { pm.expect(body).to.be.an('array').that.is.not.empty; pm.expect(body.some((entry) => String(entry.entidade_id) === pm.collectionVariables.get('pedidoId') && entry.acao === 'PEDIDO_CRIADO')).to.eql(true); });"
                 ]
               }
+            }
+          ],
+          "description": "Consulta eventos de auditoria do pedido e verifica PEDIDO_CRIADO. Requer gerenteToken e pedidoId.",
+          "response": [
+            {
+              "name": "Exemplo 200",
+              "originalRequest": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{gerenteToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/auditoria?entidade=PEDIDO&entidade_id={{pedidoId}}"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "[\n  {\n    \"id\": 1,\n    \"usuario_id\": 1,\n    \"unidade_id\": 1,\n    \"acao\": \"PEDIDO_CRIADO\",\n    \"entidade\": \"PEDIDO\",\n    \"entidade_id\": 1,\n    \"detalhes\": {\n      \"status\": \"AGUARDANDO_PAGAMENTO\",\n      \"quantidadeItens\": 1,\n      \"total\": \"39.90\"\n    },\n    \"created_at\": \"2026-01-01T00:00:00\"\n  }\n]"
             }
           ]
         }
@@ -485,7 +678,8 @@
                 ]
               }
             }
-          ]
+          ],
+          "description": "Paga o pedido APP por PIX e verifica pagamento aprovado e pedido em preparo. Requer clienteToken e pedidoId."
         },
         {
           "name": "Pagamento recusado via CARTAO",
@@ -534,7 +728,8 @@
                 ]
               }
             }
-          ]
+          ],
+          "description": "Tenta pagar o pedido BALCAO por cartao e verifica a resposta simulada de pagamento recusado. Requer clienteToken e pedidoRecusadoId."
         }
       ]
     },
@@ -562,6 +757,31 @@
                   "pm.test('Erro identifica falta de autenticacao', function () { pm.expect(body.error).to.eql('HTTP_401'); });"
                 ]
               }
+            }
+          ],
+          "description": "Acessa a rota de identidade sem enviar token e verifica HTTP 401 e HTTP_401.",
+          "response": [
+            {
+              "name": "Exemplo 401",
+              "originalRequest": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/auth/me"
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"error\": \"HTTP_401\",\n  \"message\": \"Not authenticated\",\n  \"details\": null,\n  \"timestamp\": \"2026-01-01T00:00:00+00:00\",\n  \"path\": \"/auth/me\"\n}"
             }
           ]
         },
@@ -593,6 +813,38 @@
                   "pm.test('Erro identifica perfil sem permissao', function () { pm.expect(body.error).to.eql('HTTP_403'); });"
                 ]
               }
+            }
+          ],
+          "description": "Tenta consultar estoque com perfil CLIENTE e verifica HTTP 403 e HTTP_403. Requer clienteToken.",
+          "response": [
+            {
+              "name": "Exemplo 403",
+              "originalRequest": {
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{clienteToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/estoque"
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"error\": \"HTTP_403\",\n  \"message\": \"Perfil sem permissão para este recurso\",\n  \"details\": null,\n  \"timestamp\": \"2026-01-01T00:00:00+00:00\",\n  \"path\": \"/estoque\"\n}"
             }
           ]
         },
@@ -639,7 +891,100 @@
                 ]
               }
             }
-          ]
+          ],
+          "description": "Envia pedido sem o campo obrigatorio canalPedido e verifica HTTP 422 e VALIDATION_ERROR. Requer clienteToken e IDs obtidos pelo seed."
+        },
+        {
+          "name": "404 - unidade inexistente ao criar pedido",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"canalPedido\": \"APP\",\n  \"unidadeId\": 999999,\n  \"itens\": [\n    { \"produtoId\": {{produtoDisponivelId}}, \"quantidade\": 1 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/pedidos"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 404', function () { pm.response.to.have.status(404); });",
+                  "pm.test('Erro identifica unidade inexistente', function () { pm.expect(body.error).to.eql('UNIT_NOT_FOUND'); });"
+                ]
+              }
+            }
+          ],
+          "description": "Tenta criar pedido em unidade inexistente e verifica HTTP 404 com UNIT_NOT_FOUND. Requer clienteToken e produtoDisponivelId."
+        },
+        {
+          "name": "422 - quantidade invalida",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clienteToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"canalPedido\": \"APP\",\n  \"unidadeId\": {{unidadeCentroId}},\n  \"itens\": [\n    { \"produtoId\": {{produtoDisponivelId}}, \"quantidade\": 0 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/pedidos"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('Status 422', function () { pm.response.to.have.status(422); });",
+                  "pm.test('Erro identifica validacao', function () { pm.expect(body.error).to.eql('VALIDATION_ERROR'); });"
+                ]
+              }
+            }
+          ],
+          "description": "Envia item com quantidade zero e verifica HTTP 422 com VALIDATION_ERROR. Requer clienteToken e IDs obtidos pelo seed."
         }
       ]
     }
