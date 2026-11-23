@@ -2,9 +2,11 @@ from enum import Enum
 
 
 class OrderChannel(str, Enum):
-    BALCAO = "BALCAO"
-    DELIVERY = "DELIVERY"
     APP = "APP"
+    TOTEM = "TOTEM"
+    BALCAO = "BALCAO"
+    PICKUP = "PICKUP"
+    WEB = "WEB"
 
 
 class OrderStatus(str, Enum):

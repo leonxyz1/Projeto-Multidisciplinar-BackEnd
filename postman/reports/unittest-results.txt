@@ -26,6 +26,6 @@ test_unit_menu_validates_pagination_and_missing_unit (test_units_api.UnitsApiTes
 test_unit_stock_requires_attendant_or_manager (test_units_api.UnitsApiTests.test_unit_stock_requires_attendant_or_manager) ... ok
 
 ----------------------------------------------------------------------
-Ran 26 tests in 21.194s
+Ran 26 tests in 21.744s
 
 OK
