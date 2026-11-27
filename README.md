@@ -5,7 +5,7 @@ implementada com FastAPI, SQLAlchemy, Alembic e SQLite.
 
 ## Requisitos
 
-- Python 3.10 ou superior
+- Python 3.11 ou superior
 - Git
 - OpenSSL para gerar um segredo JWT local (ou outro gerador seguro)
 - Node.js e npm (opcionais, para executar a coleção com Newman)
@@ -108,11 +108,7 @@ python -m src.infrastructure.database.seed
 uvicorn src.main:app --reload
 ```
 
-Com a API em execução, rode a coleção no Postman. Para a evidência do PDF,
-capture a tela de resumo do Runner mostrando todos os testes aprovados e,
-se necessário, os detalhes dos requests negativos (401, 403, 404, 409 e 422).
-O comando de `unittest` acima é independente do banco da API; registre também
-seu resultado no PDF.
+Com a API em execução, rode a coleção no Postman.
 
 ## Banco e arquivos locais
 
